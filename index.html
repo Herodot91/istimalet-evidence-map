@@ -1,0 +1,2218 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<title>Harta dovezilor — istimâlet pe teren, 1450–1600</title>
+<style>
+  /* Registru otoman de socoteli: hârtie rece, cerneală fero-galică,
+     rubricat cu roșu doar acolo unde registrul afirmă ceva. Culorile de
+     dovadă sunt pigmenți — verdigris, ocru, roșu de plumb, violet —
+     fiindcă un instrument despre ce scrie în registre n-are de ce să
+     arate ca un tablou de bord. */
+  :root{
+    --ink:#1B1915; --ink2:#75705F; --line:#C3BFB1; --panel:#EFEDE6; --bg:#EAE7DE;
+    --rubric:#9E2B20; --navy:#1C2340;
+    --direct:#2E5C4F; --contextual:#9C6B28; --untested:#9E2B20; --problematic:#5B4473;
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);background:var(--bg);
+    font:14px/1.55 "Hoefler Text","Palatino Linotype",Palatino,Georgia,serif;
+    font-variant-numeric:tabular-nums lining-nums;
+    -webkit-font-smoothing:antialiased}
+  /* Capul registrului: două reguli, groasă și subțire, ca la deschiderea
+     unui defter. Titlul în rubric, atribuirea dedesubt în cerneală. */
+  /* Capul de pagină preia bara bleumarin a posterului, ca prototipul și
+     afișul să se citească drept același proiect în sală. */
+  #hdr{padding:12px 16px 10px;background:var(--navy);border-bottom:2px solid var(--navy)}
+  #hdr h1{margin:0 0 3px;font-size:17px;font-weight:600;letter-spacing:.005em;
+          color:#F2EFE4}
+  #hdr .sub{font-size:11.5px;color:rgba(242,239,228,.72);max-width:76ch;line-height:1.5}
+  /* Pe un proiector (1280+) harta primește restul; pe un ecran îngust
+     coloanele laterale se strâng, altfel harta dispare între ele. */
+  @media (max-width:1180px){ #app{grid-template-columns:168px 1fr 276px!important} }
+  @media (max-width:900px){  #app{grid-template-columns:150px 1fr 244px!important} }
+  #app{display:grid;grid-template-columns:196px 1fr 318px;
+       height:calc(100vh - 116px);min-height:460px}
+  #left,#right{background:var(--panel);overflow-y:auto;padding:11px 12px}
+  #left{border-right:1px solid var(--ink)} #right{border-left:1px solid var(--ink)}
+  #mid{position:relative;overflow:hidden;background:var(--bg)}
+  canvas{display:block;cursor:grab} canvas:active{cursor:grabbing}
+  /* Rubrica unei secțiuni: nu versale distanțate, ci un cap subliniat —
+     cum se marchează o rubrică nouă într-un registru. */
+  h2{font-size:11.5px;color:var(--rubric);margin:0 0 7px;font-weight:600;
+     border-bottom:1px solid var(--line);padding-bottom:3px}
+  .sec{margin-bottom:15px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+  label.row{display:flex;align-items:center;gap:5px;padding:2px 0;font-size:11px;cursor:pointer}
+  label.row input{margin:0;cursor:pointer}
+  label.row .sw{width:8px;height:8px;border-radius:2px;flex:none}
+  label.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #tl{border-top:1px solid var(--line);background:var(--panel);padding:7px 14px 9px}
+  #tlrow{display:flex;align-items:center;gap:10px}
+  #t{flex:1} #tdate{min-width:112px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:10px;padding:1px 8px;
+        font:10.5px/1.6 inherit;cursor:pointer;color:var(--ink)}
+  .chip:hover{border-color:var(--ink2)}
+  .drow{display:flex;align-items:center;gap:6px;padding:4px 3px;
+        border-bottom:1px dotted var(--line);font-size:12px}
+  .drow:last-child{border-bottom:none}
+  /* Un rând care duce undeva arată că duce undeva: se aprinde la hover
+     și, în același timp, aprinde asiza corespunzătoare de pe hartă. */
+  .drow[data-dim],.drow[data-goto]{cursor:pointer;
+    transition:background .12s var(--ease),box-shadow .12s var(--ease)}
+  .drow[data-dim]:hover,.drow[data-goto]:hover{background:rgba(158,43,32,.07);
+    box-shadow:inset 2px 0 0 var(--rubric)}
+  .drow.on{background:rgba(158,43,32,.1);box-shadow:inset 2px 0 0 var(--rubric)}
+  .claim{cursor:pointer;transition:background .12s var(--ease)}
+  .claim:hover{background:#F6F4EE}
+  /* comutator de port */
+  #ports{display:flex;gap:4px;margin-bottom:6px}
+  #ports .chip.on{background:var(--navy);color:#F2EFE4;border-color:var(--navy)}
+  /* ------------------------------------------------------------------ *
+   *  Tabloul pe file, nu pe derulare.
+   *
+   *  La o conferință, derularea e un cost: vorbitorul caută, sala așteaptă,
+   *  iar ce era sus iese din cadru. Patru file, fiecare încape întreagă, și
+   *  o licărire scurtă la schimbare — ca ochiul să prindă că s-a schimbat
+   *  panoul, nu conținutul aceluiași panou.
+   * ------------------------------------------------------------------ */
+  #right{display:flex;flex-direction:column;overflow:hidden}
+  #tabs{display:flex;flex-wrap:wrap;gap:2px;margin-bottom:7px;
+    border-bottom:1px solid var(--ink);flex:none}
+  #tabs button{flex:1 1 auto;min-width:62px;border:1px solid var(--line);border-bottom:none;
+    background:transparent;color:var(--ink2);border-radius:3px 3px 0 0;cursor:pointer;
+    padding:5px 3px;font:12px/1.3 inherit;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;transition:background .14s var(--ease),color .14s var(--ease)}
+  #tabs button:hover{background:rgba(158,43,32,.06);color:var(--ink)}
+  #tabs button.on{background:var(--navy);border-color:var(--navy);color:#F2EFE4;
+    font-weight:600}
+  #panes{flex:1;min-height:0;position:relative}
+  .pane{display:none}
+  .pane.on{display:block;animation:flash .26s var(--ease) both}
+  @keyframes flash{
+    0%  {opacity:0; transform:translateY(5px); background:rgba(158,43,32,.12)}
+    55% {opacity:1;                            background:rgba(158,43,32,.06)}
+    100%{opacity:1; transform:none;            background:transparent}
+  }
+  /* fila care s-a schimbat fără să fie apăsată clipește o dată */
+  #tabs button.ping{animation:ping .5s var(--ease) 2}
+  @keyframes ping{0%,100%{box-shadow:none}50%{box-shadow:inset 0 0 0 2px var(--rubric)}}
+  @media (prefers-reduced-motion: reduce){
+    .pane.on,#tabs button.ping{animation:none}
+  }
+
+  /* Cheia e material de referință: se consultă o dată, apoi încurcă.
+     Închisă implicit, ca restul comenzilor să încapă fără derulare. */
+  h2.disc{cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+  h2.disc::after{content:"−";font-weight:400;color:var(--ink2)}
+  h2.disc.shut::after{content:"+"}
+  h2.disc.shut+.discbody{display:none}
+  #left{overflow-y:auto;overflow-x:hidden}
+  #left .sec{margin-bottom:12px}
+
+  /* Scutul de dovezi + banda de statut: forme pe care un istoric le
+     citește fără legendă — o grilă și o diagramă de domnii. */
+  .shield{display:flex;gap:7px;margin:7px 0 2px;flex-wrap:wrap}
+  .shgrp{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--ink2)}
+  .shgrp>span{margin-right:2px}
+  .shgrp.conc{padding:2px 4px;border:1px dashed var(--line);border-radius:3px}
+  .cl{width:19px;height:19px;border:1.5px solid;border-radius:2px;display:inline-block;
+      cursor:pointer;transition:transform .12s var(--ease)}
+  .cl:hover{transform:scale(1.22)}
+  .cl.on{box-shadow:0 0 0 2px var(--ink)}
+  .striprow{display:flex;gap:5px;align-items:flex-start}
+  .striplab{display:flex;flex-direction:column;flex:none;width:92px}
+  .striplab span{height:19px;line-height:19px;font-size:11px;color:var(--ink2);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  svg.strip{flex:1;min-width:0;height:114px}
+  .stripax{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink2);
+    margin:2px 0 7px;padding-left:97px}
+  .legrow{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink2);
+    flex-wrap:wrap}
+  .legrow i{width:16px;height:10px;border-radius:1px;display:inline-block;margin-left:5px}
+  .legrow i:first-child{margin-left:0}
+
+  .prop{display:grid;grid-template-columns:1fr 118px 38px;align-items:center;gap:6px;
+    font-size:11.5px;color:var(--ink2);padding:3px 0}
+  .prop .pt{height:12px;background:rgba(117,112,95,.18);border-radius:1px;position:relative}
+  .prop .pt i{position:absolute;left:0;top:0;bottom:0;background:var(--rubric);
+    border-radius:1px;transition:width .3s var(--ease)}
+  .prop .pn{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+
+  /* Caseta de explicație: apare sub grafic, numai pentru elementul cerut. */
+  .exbox{position:relative;margin-top:9px;padding:9px 11px 10px;background:#fff;
+    border:1px solid var(--line);border-left:2px solid var(--rubric);border-radius:0 4px 4px 0;
+    font-size:12px;line-height:1.55;animation:flash .22s var(--ease) both}
+  .exbox b{display:block;color:var(--rubric);margin-bottom:2px}
+  .exbox p{margin:0;color:var(--ink2)}
+  .exclose{position:absolute;right:4px;top:3px;border:none;background:none;cursor:pointer;
+    font:13px/1 inherit;color:var(--ink2);padding:1px 3px}
+  .exclose:hover{color:var(--rubric)}
+  svg.strip .ex{cursor:pointer}
+  svg.strip .ex:hover{opacity:.78}
+  .prop[data-ex]{cursor:pointer;border-radius:2px}
+  .prop[data-ex]:hover{background:rgba(158,43,32,.06)}
+
+  /* Afirmații: un rând pe afirmație, culoarea punctului = certitudinea.
+     Textul întreg se deschide dedesubt, la clic. */
+  .claims{margin:7px 0 4px}
+  .crow{display:flex;align-items:flex-start;gap:7px;padding:5px 4px;cursor:pointer;
+    border-bottom:1px dotted var(--line);font-size:12px;line-height:1.35;
+    transition:background .12s var(--ease)}
+  .crow:hover{background:rgba(158,43,32,.06)}
+  .crow.open{background:rgba(158,43,32,.09)}
+  .crow .ctx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crow.open .ctx{white-space:normal}
+  .crow .cdot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:4px}
+  .crow.attested .cdot{background:var(--direct)}
+  .crow.reconstructed .cdot{background:var(--contextual)}
+  .crow.conjectural .cdot{background:transparent;border:1.5px solid var(--untested)}
+  .crow.key{border-bottom:none;border-top:1px solid var(--ink);margin-top:4px;
+    font-weight:600;cursor:default}
+  .crow.key:hover{background:transparent}
+  .cfull{padding:0 4px 7px 20px;font-size:12px;line-height:1.5;color:var(--ink2);
+    animation:flash .2s var(--ease) both}
+  .cfull p{margin:0 0 3px}
+
+  /* O linie de scor în locul unui paragraf: cifrele mari, cuvintele mici,
+     fraza întreagă la semnul de întrebare. */
+  .scoreline{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin:9px 0 2px;
+    padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:4px;
+    cursor:pointer;transition:background .12s var(--ease)}
+  .scoreline:hover{background:#F7F5EF}
+  .scoreline b{font-size:19px;font-weight:600;color:var(--rubric);line-height:1}
+  .scoreline span{font-size:11.5px;color:var(--ink2);margin-right:8px}
+  .scoreline em{margin-left:auto;font-style:normal;width:19px;height:19px;flex:none;
+    border:1px solid var(--line);border-radius:50%;text-align:center;line-height:17px;
+    font-size:12px;color:var(--ink2)}
+  .scoreline:hover em{border-color:var(--rubric);color:var(--rubric)}
+
+  /* ---- grafice preluate din poster ---- */
+  svg.hub{display:block;width:100%;max-width:230px;margin:2px auto 0}
+  svg.hub .hn{cursor:pointer}
+  svg.hub .hn:hover circle{stroke-width:3.4}
+  .hublab{display:grid;grid-template-columns:1fr 1fr;gap:1px 8px;margin:4px 0 9px}
+  .hublab span{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--ink2);
+    cursor:pointer;padding:1px 2px;border-radius:2px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .hublab span:hover{background:rgba(158,43,32,.07);color:var(--ink)}
+  .hublab i{width:9px;height:9px;border-radius:50%;border:1.5px solid;flex:none}
+  .pairhead{font-size:11px;color:var(--rubric);border-bottom:1px solid var(--line);
+    padding-bottom:3px;margin:4px 0 7px;font-weight:600}
+  .pairs{display:flex;gap:16px;justify-content:center;align-items:flex-end}
+  .pcol{text-align:center}
+  .pbars{display:flex;align-items:flex-end;gap:3px;height:66px}
+  .pbars i{width:11px;border-radius:1px 1px 0 0;cursor:pointer;display:block;
+    transition:transform .12s var(--ease)}
+  .pbars i:hover{transform:scaleY(1.07)}
+  .pname{font-size:10.5px;color:var(--ink2);margin-top:4px}
+
+  /* ---- lectura politică ---- */
+  .instr{display:flex;gap:9px;margin:4px 0 9px}
+  .icol{flex:1;text-align:center;padding:9px 6px;background:#fff;border:1px solid var(--line);
+    border-top:3px solid var(--navy);border-radius:0 0 4px 4px}
+  .icol .ih{font-size:11.5px;color:var(--navy);font-weight:600;margin-bottom:3px}
+  .icol .ibig{font-size:30px;line-height:1;color:var(--rubric);font-weight:600}
+  .icol .ism{font-size:10px;color:var(--ink2);margin-top:3px;line-height:1.3}
+  .choke{margin:2px 0 4px}
+  .crow2{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;
+    padding:3px 2px;border-bottom:1px dotted var(--line)}
+  .crow2 b{font-weight:600}
+  .crow2 span{color:var(--ink2);text-align:right}
+
+  .gradient{margin:7px 0 2px;padding:7px 9px;background:#fff;border:1px solid var(--line);
+    border-radius:4px;cursor:pointer;position:relative}
+  .gradient:hover{background:#F7F5EF}
+  .grow{display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0}
+  .grow i{width:14px;height:9px;border-radius:1px;flex:none}
+  .grow b{font-weight:600;flex:none}
+  .grow span{color:var(--ink2);margin-left:auto;text-align:right}
+  .gradient>em{position:absolute;right:6px;top:5px;font-style:normal;width:17px;height:17px;
+    border:1px solid var(--line);border-radius:50%;text-align:center;line-height:15px;
+    font-size:11px;color:var(--ink2)}
+
+  /* graficul decalajului */
+  .gaphead{font-size:11px;color:var(--rubric);border-bottom:1px solid var(--line);
+    padding-bottom:3px;margin:11px 0 5px;font-weight:600}
+  .tally{margin:2px 0 5px}
+  .trow{display:grid;grid-template-columns:40px 1fr;align-items:start;gap:8px;
+    padding:5px 3px;border-bottom:1px dotted var(--line);font-size:11.5px;cursor:pointer;
+    transition:background .12s var(--ease)}
+  .trow:hover{background:rgba(158,43,32,.06)}
+  .trow .tb{min-width:0;display:block}
+  .trow .tn{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--ink)}
+  .trow .ts{display:flex;gap:4px;padding-top:2px}
+  .trow .tm{display:block;font-size:10px;color:var(--ink2);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .trow .tm u{text-decoration:none;color:var(--problematic);font-style:italic}
+  .trow .tm .none{color:var(--untested);font-style:italic}
+  b.kizvor{color:var(--rubric);font-weight:400;margin-right:2px}
+  b.kstudiu{color:var(--ink2);font-weight:400;margin-right:2px;font-size:9px}
+  .tallyfoot b{font-weight:400}
+  .ts i,.tallyfoot i{width:13px;height:13px;border-radius:50%;display:inline-block;
+    border:1.5px solid;flex:none}
+  .ts i.empty,.tallyfoot i.empty{background:transparent;border-color:var(--line);
+    border-style:dashed}
+  .tallyfoot{display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--ink2);
+    margin:5px 2px 0}
+  .tallyfoot span{display:flex;align-items:center;gap:5px}
+
+  /* secțiuni pliabile */
+  h2.fold{cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+  h2.fold::after{content:"−";font-weight:400;color:var(--ink2)}
+  h2.fold.shut::after{content:"+"}
+  h2.fold.shut+div,h2.fold.shut+div+div{display:none}
+  .cnt{border:none;background:none;padding:0;font:inherit;color:var(--rubric);
+       font-weight:600;cursor:pointer;border-bottom:1px solid currentColor}
+
+  /* Diagramă de acoperire arhivistică: o pistă pe dimensiune, anii pe
+     orizontală, fereastra decidabilă marcată. Forma unui instrument de
+     cercetare, nu a unui grafic. */
+  .cov{font-size:11.5px;margin-bottom:6px}
+  .covrow,.covhead,.covfoot{display:grid;grid-template-columns:104px 1fr 56px;
+    align-items:center;gap:6px}
+  .covrow{padding:1.5px 0;cursor:pointer;transition:background .12s var(--ease)}
+  .covrow:hover{background:rgba(158,43,32,.07)}
+  .covrow.on{background:rgba(158,43,32,.1)}
+  .covnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+  .covtrack{position:relative;height:15px;border-bottom:1px solid var(--line)}
+  .covhead .covtrack{height:8px;border-bottom:none}
+  .covtrack .win{position:absolute;top:-1px;bottom:-1px;background:rgba(27,25,21,.10);
+    border-left:1px solid var(--ink2);border-right:1px solid var(--ink2)}
+  .covtrack b{position:absolute;top:4px;height:8px;border-radius:1px}
+  /* O pistă goală trebuie să arate goală. Prima versiune punea o linie
+     punctată roșie pe toată lățimea, care se citea ca o bară plină de
+     date — exact opusul a ce spune. Acum rămâne doar linia de bază. */
+  .covtrack s{position:absolute;left:0;right:0;top:7.5px;height:0;
+    border-top:1px solid rgba(117,112,95,.28)}
+  .covtrack u{position:absolute;top:0;height:8px;width:1px;background:var(--rubric)}
+  .covtrack em{position:absolute;top:0;font-style:normal;color:var(--ink2);font-size:10px}
+  .covfoot .covtrack{height:12px;border-bottom:none}
+  .covyr{text-align:right;color:var(--ink2);font-size:10px}
+  .drow .sw{width:8px;height:8px;border-radius:2px;flex:none}
+  .drow .nm{flex:1;min-width:0} .drow .st{font-size:10px;text-transform:uppercase;color:var(--ink2)}
+  .note{font-size:11.5px;color:var(--ink2);margin-top:8px;line-height:1.5}
+  .verdict{margin:9px 0;padding:9px 10px;background:#fff;border:1px solid var(--line);
+           border-radius:4px;font-size:12px;line-height:1.55}
+  .claim{padding:6px 9px;margin-top:5px;border-left:3px solid var(--line);font-size:12px;
+         line-height:1.5;background:#fff}
+  .claim.attested{border-left-color:var(--direct)}
+  .claim.reconstructed{border-left-color:var(--contextual)}
+  .claim.conjectural{border-left-color:var(--untested)}
+  .claim .cm{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+             color:var(--ink2);margin-top:2px}
+  #legend{font-size:10px}
+  #legend>div{display:flex;align-items:center;gap:5px;padding:1px 0}
+  #legend>div.lgh,#legend>div.lgp{display:block}
+  #legend .lgh{color:var(--rubric);font-weight:600;font-size:10.5px;
+    border-bottom:1px solid var(--line);padding-bottom:2px;margin:6px 0 3px}
+  #legend .lgh:first-child{margin-top:0}
+  #legend .lgp{color:var(--ink2);line-height:1.4;margin:2px 0 4px}
+  #hdr{position:relative}
+  #lang{position:absolute;right:14px;top:12px;display:flex;gap:3px}
+  #lang button{border:1px solid var(--line);background:var(--panel);
+    border-radius:3px;padding:1px 7px;font:10.5px/1.6 inherit;color:var(--ink2);cursor:pointer}
+  #lang button{background:rgba(242,239,228,.12);color:rgba(242,239,228,.8);
+    border-color:rgba(242,239,228,.3)}
+  #lang button.on{background:#F2EFE4;color:var(--navy);border-color:#F2EFE4}
+  #legend div{display:flex;align-items:center;gap:5px;padding:1px 0}
+  #legend .sw{width:8px;height:8px;border-radius:2px}
+  #hint{position:absolute;right:10px;bottom:10px;font-size:10px;color:var(--ink2);
+        background:rgba(251,248,241,.92);padding:3px 7px;border-radius:3px}
+  #tip{position:absolute;display:none;pointer-events:none;background:#2b2317;color:#fbf8f1;
+       font-size:10.5px;line-height:1.35;padding:4px 7px;border-radius:3px;max-width:190px;
+       transform:translateY(-100%)}
+  .srcrow{display:flex;align-items:center;gap:4px;padding:1.5px 0;font-size:10.5px}
+  .srcrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srcrow button{width:16px;height:16px;line-height:1;padding:0;border:1px solid var(--line);
+    background:#fff;border-radius:3px;cursor:pointer;font:11px/1 inherit;color:var(--ink)}
+  .srcrow button:hover{border-color:var(--ink2)}
+  .srcrow .n{width:12px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
+  .srcrow .n.zero{color:#9a8f7d} .srcrow .n.cor{color:var(--direct)}
+  #play{width:24px;height:22px;border:1px solid var(--line);background:#fff;border-radius:4px;
+        cursor:pointer;font:11px/1 inherit;color:var(--ink)}
+  #empty{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:380px;
+         background:rgba(251,248,241,.96);border:1px solid var(--untested);border-radius:4px;
+         padding:7px 9px;font-size:10.5px;line-height:1.4;display:none}
+  #empty b{color:var(--untested)}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div id="lang"><button data-l="ro">RO</button><button data-l="en">EN</button></div><h1 id="hdrh1"></h1>
+  <div class="sub" id="hdrsub"></div>
+</div>
+
+<div id="app">
+  <div id="left">
+    <div class="sec"><h2 class="disc shut" id="hKey"></h2><div id="legend" class="discbody"></div></div>
+    <div class="sec"><h2 id="hAsize"></h2>
+      <div class="note" id="hAsizeP" style="margin:0 0 5px"></div>
+      <div id="dimfilters"></div></div>
+    <div class="sec"><h2 id="hStrat"></h2><div id="layers"></div></div>
+    <div class="sec"><h2 id="hVed"></h2>
+      <label class="row"><input type="checkbox" id="expl"><span class="nm" id="hExpl"></span></label>
+    </div>
+    <div class="sec"><h2 id="hSim"></h2>
+      <div class="note" id="hSimP" style="margin:0 0 5px"></div>
+      <div id="srcsim"></div>
+      <div style="display:flex;gap:4px;margin-top:6px">
+        <button class="chip" id="stress"><span id="bStress"></span></button>
+        <button class="chip" id="resetsrc"><span id="bReset"></span></button>
+      </div>
+      <div id="stressout" class="note"></div>
+    </div>
+  </div>
+  <div id="mid">
+    <canvas id="cv"></canvas>
+    <div id="empty"></div><div id="tip"></div>
+    <div id="hint"></div>
+  </div>
+  <div id="right">
+    <div id="ports"></div>
+    <nav id="tabs" role="tablist"></nav>
+    <div id="panes">
+      <section class="pane" id="policy" role="tabpanel"></section>
+      <section class="pane" id="effect" role="tabpanel"></section>
+      <section class="pane" id="annex"  role="tabpanel"></section>
+      <section class="pane" id="istim"  role="tabpanel"></section>
+      <section class="pane" id="detail" role="tabpanel"></section>
+    </div>
+  </div>
+</div>
+
+<div id="tl">
+  <div id="tlrow">
+    <button id="play" title="rulează timpul">▶</button>
+    <span id="tdate"></span>
+    <input type="range" id="t" min="0" max="1811" value="415">
+    <span id="periods"></span>
+  </div>
+</div>
+
+<script>
+/* ==================================================================== *
+ *  Timp — index lunar. Chilia cade în iulie 1484, Cetatea Albă în
+ *  august: cinci săptămâni pe care un model anual le-ar topi într-un
+ *  punct. Fereastra merge până în 1600, ca să cuprindă 1595.
+ * ==================================================================== */
+/* ==================================================================== *
+ *  Două limbi.
+ *
+ *  Prototipul se prezintă la conferință, deci engleza nu e opțională —
+ *  dar nici româna nu e o traducere a englezei: studiul e scris aici.
+ *  Perechea stă lângă fiecare șir, nu într-un dicționar de chei, ca să
+ *  nu se poată adăuga un text într-o limbă și să se uite cealaltă.
+ * ==================================================================== */
+/* localStorage aruncă în file:// și în iframe-uri izolate — adică exact
+   pe laptopul din sală. Citirea trebuie să fie la fel de precaută ca
+   scrierea, altfel tot scriptul moare la prima linie. */
+function prefLang(){
+  try{ return localStorage.getItem("hd.lang") || "ro"; }catch(e){ return "ro"; }
+}
+let LANG = prefLang();
+const tr = (ro, en) => LANG === "en" ? en : ro;
+function setLang(l){
+  LANG = l;
+  try{ localStorage.setItem("hd.lang", l); }catch(e){}
+  document.documentElement.lang = l;
+  buildChrome(); apply();
+}
+
+const Y0=1450, M=(y,m)=>(y-Y0)*12+(m-1);
+const yearOf=t=>Y0+Math.floor(t/12), monthOf=t=>(t%12)+1;
+const RO_MON=["ian.","feb.","mar.","apr.","mai","iun.","iul.","aug.","sep.","oct.","noi.","dec."];
+const WIN={from:1450,to:1600};
+
+/* ---------------- geografie (din prototipul 2D) ---------------- */
+const WILD=[[29.50,46.85],[29.95,47.15],[30.85,47.45],[32.05,47.85],[33.55,48.12],
+            [35.20,48.22],[36.50,47.70]];
+const TERR={
+ mold:[[[25.60,47.95],[26.50,48.52],[27.50,48.50],[28.40,48.35],[28.90,47.60],[29.50,47.00],
+   [29.90,46.60],[30.35,46.20],[30.20,45.85],[29.70,45.60],[29.35,45.35],[28.50,45.30],
+   [28.05,45.45],[27.50,45.90],[27.00,46.35],[26.40,46.70],[26.00,47.10],[25.60,47.50]]],
+ ott:[[[22.50,44.60],[23.30,43.85],[24.40,43.80],[25.60,43.70],[26.70,44.05],[27.60,44.25],
+   [28.40,44.40],[28.60,43.20],[22.50,43.20]],
+  [[27.90,44.35],[28.60,44.40],[29.00,44.90],[29.35,45.30],[28.50,45.32],[28.15,45.05],[27.95,44.70]]],
+ pol:[[[22.50,49.60],[36.50,49.60],WILD[6],WILD[5],WILD[4],WILD[3],WILD[2],WILD[1],WILD[0],
+   [29.20,47.30],[28.60,48.45],[27.50,48.55],[26.50,48.55],[25.60,48.00],[24.60,48.60],
+   [23.30,48.90],[22.50,49.00]]],
+ crim:[[[33.00,46.15],[34.20,46.25],[35.30,46.10],[36.30,45.45],[35.90,45.00],[34.90,44.70],
+   [33.90,44.40],[33.30,44.60],[32.50,45.35],[33.20,45.90]],
+  [WILD[0],WILD[1],WILD[2],WILD[3],WILD[4],WILD[5],WILD[6],
+   [36.50,46.35],[35.00,46.40],[33.50,46.20],[32.00,46.30],[30.60,46.35],[29.70,46.52]]],
+ wal:[[[22.90,45.35],[23.80,45.55],[24.90,45.60],[25.80,45.50],[26.50,45.40],[27.20,45.60],
+   [27.60,45.40],[27.90,45.30],[27.40,44.20],[26.50,44.00],[25.50,43.70],[24.40,43.80],
+   [23.30,43.85],[22.70,44.50]]]
+};
+const TCOL={mold:"#c0703a",ott:"#2e6b8f",pol:"#8a7fb0",crim:"#b8a44c",wal:"#9c6b8a"};
+
+const ANNEX=[
+ {id:"a1484",ro:"Districtele Kili și Akkerman",en:"The Kili and Akkerman districts",from:M(1484,8),coded:true,
+  ring:[[29.35,45.35],[30.35,46.20],[30.00,46.60],[29.20,46.50],[28.45,46.10],
+        [27.95,45.65],[28.05,45.45],[28.50,45.30]]},
+ {id:"a1538",ro:"Bugeacul și pintenul Benderului",en:"Budjak and the Bender salient",from:M(1538,9),coded:false,
+  ring:[[28.45,46.10],[29.20,46.50],[29.75,46.90],[29.60,47.05],[28.90,46.75],
+        [28.20,46.35],[27.95,45.95]]},
+ {id:"a1595f",ro:"Fâșia Akkerman–Bender",en:"The Akkerman–Bender strip",from:M(1595,1),coded:false,
+  ring:[[30.38,46.22],[30.10,46.50],[29.80,46.80],[29.52,46.95],[29.30,46.86],
+        [29.55,46.62],[29.90,46.32],[30.15,46.08]]},
+ {id:"a1595h",ro:"Cele șapte sate hănești",en:"The seven hanate villages",from:M(1595,1),coded:false,hyp:true,
+  ring:[[29.52,46.82],[29.78,46.78],[30.02,46.52],[29.98,46.40],[29.72,46.48],[29.48,46.68]]}
+];
+
+const PLACES=[
+ {id:"chilia", name:"Chilia",       alt:"Kili",     lon:29.27,lat:45.45,ott:M(1484,7),coded:true, upkeep:true},
+ {id:"alba",   name:"Cetatea Albă", alt:"Akkerman", lon:30.35,lat:46.19,ott:M(1484,8),coded:true, upkeep:true},
+ {id:"tighina",name:"Tighina",      alt:"Bender",   lon:29.47,lat:46.83,ott:M(1538,9),coded:false,upkeep:true},
+ {id:"braila", name:"Brăila",       alt:"",         lon:27.96,lat:45.27,ott:M(1540,10),coded:false,upkeep:true},
+ {id:"caffa",  name:"Caffa",        alt:"Kefe",     lon:35.38,lat:45.05,ott:M(1475,6),coded:false,upkeep:false},
+ {id:"suceava",name:"Suceava",      alt:"",         lon:26.25,lat:47.63,ott:null,      coded:false,upkeep:false}
+];
+
+/* v2, Tabelul 5, aduce un statut care nu exista în prima versiune:
+   dimensiuni din grupa conciliantă care *au* căpătat sprijin pozitiv —
+   acomodare fiscală la ambele porturi, continuitate juridică doar la Kili.
+   Nu sunt „direct" (nu stau pe atestare de cucerire) și nu mai sunt
+   netestate. Stau pe o singură unitate de dovadă și o singură sursă —
+   ca absolut tot din acest corpus. */
+const EV={
+ direct:     {ro:"atestat direct",        en:"directly attested",   rank:3,h: 54,c:"#2E5C4F"},
+ documented: {ro:"documentat, o sursă",   en:"documented, 1 source",rank:2,h: 38,c:"#5D8A46"},
+ contextual: {ro:"contextual",            en:"contextual",          rank:2,h: 31,c:"#9C6B28"},
+ untested:   {ro:"fără dovadă locală",    en:"no local evidence",   rank:1,h:2.5,c:"#9E2B20"},
+ problematic:{ro:"contrazis de izvor",    en:"contradicted",        rank:0,h:-26,c:"#5B4473"}};
+Object.values(EV).forEach(s=>Object.defineProperty(s,"lab",{get(){return tr(this.ro,this.en);}}));
+
+const DIMS=[
+ {id:"COERCION", ro:"Coerciție militară",      en:"Military coercion",      st:"direct",
+  lit:"İnalcık 1954; Beldiceanu 1964"},
+ {id:"ADMIN",    ro:"Integrare administrativă",en:"Administrative integration",st:"direct",
+  lit:"İnalcık 1954; Beldiceanu 1968"},
+ {id:"ECONOMIC", ro:"Încorporare economică",   en:"Economic incorporation", st:"contextual",
+  lit:"Papacostea 1977, 1988"},
+ {id:"SECURITY", ro:"Securitate / protecție",  en:"Security / protection",  st:"untested",
+  lit:"Lowry 2003; Aksoy Parmaksızoğlu (amân/ahdname); Öz 2021 (istimâletnâme)"},
+ {id:"LEGAL",    ro:"Continuitate juridică",   en:"Legal continuity",       st:"untested",
+  lit:"Tuğluca 2014; Panaite 2019"},
+ {id:"FISCAL",   ro:"Moderație fiscală",       en:"Fiscal moderation",      st:"untested",
+  lit:"Tuğluca 2014; İlgürel, DİA XXIII, 362–363"},
+ {id:"INCLUSION",ro:"Includere locală",        en:"Local inclusion",        st:"untested",
+  lit:"Lowry 2003; Tuğluca 2014; Ünal 2014 (yurtluk-ocaklık)"},
+ {id:"RELIGIOUS",ro:"Acomodare religioasă",    en:"Religious accommodation",st:"untested",
+  lit:"Detrez 2023; Aşıkpaşazâde; Savaş (vakıf, kilise)"}
+];
+DIMS.forEach(d=>Object.defineProperty(d,"n",{get(){return tr(this.ro,this.en);}}));
+/* Diferențele per port, din v2 (Tabelele 4–5). Nu mai e una singură:
+   · acomodare religioasă — contrazisă la Akkerman (biserici în moschei,
+     hutba în numele sultanului), netestată la Kili. Coloana coboară.
+   · acomodare fiscală — documentată la AMBELE porturi.
+   · continuitate juridică — documentată DOAR la Kili.
+   Ultimele două erau codate „netestat" la ambele în versiunea veche a
+   acestei hărți. Era greșit: exact ele sunt, după v2, „cel mai
+   substanțial rezultat istoric" al studiului, fiindcă sunt dimensiunile
+   care deosebesc istimâletul propriu-zis de încorporarea instituțională
+   generică. */
+const OVER={
+  alba:  {RELIGIOUS:"problematic", FISCAL:"documented"},
+  chilia:{FISCAL:"documented",     LEGAL:"documented"}
+};
+const stFor=(p,d)=>(OVER[p]&&OVER[p][d.id])||d.st;
+
+/* ---------------- naraţiune: fiecare afirmaţie e gradată ---------------
+   Nu există un câmp `story`. Proza simplă este registrul în care o
+   afirmaţie netestată se citeşte ca fapt, aşa că nu există loc unde o
+   propoziţie să intre fără certitudine şi sursă. */
+const STORIES={
+ chilia:{tro:"Cheia Dunării își schimbă stăpânul", ten:"The key to the Danube changes hands",
+  claims:[
+   {ro:"Asediu de nouă zile, pe uscat și pe mare; cetatea cade la 14/15 iulie 1484.",
+    en:"A nine-day siege by land and sea; the fortress falls on 14/15 July 1484.",
+    c:"attested", s:"Beldiceanu 1964; Danişmend 1971"},
+   {ro:"Bayezid II o numește „cheia și poarta întregii Moldove”.",
+    en:"Bayezid II calls it “the key and gate of all Moldavia”.",
+    c:"reconstructed", s:tr=>tr("cronici otomane","Ottoman chronicles")},
+   {ro:"Continuitate juridică — norme dinainte de cucerire păstrate — este documentată aici, "+
+      "și numai aici dintre cele două porturi.",
+    en:"Legal continuity — pre-conquest norms retained — is documented here, and here only "+
+      "of the two ports.",
+    c:"reconstructed", s:tr=>tr("Plamadeala 2026, Tab. 5 · o unitate, o sursă",
+                                "Plamadeala 2026, Tab. 5 · one unit, one source")},
+   {ro:"Acomodare fiscală este documentată, ca și la Akkerman.",
+    en:"Tax accommodation is documented, as at Akkerman.",
+    c:"reconstructed", s:"Plamadeala 2026, Tab. 5"},
+   {ro:"Instalare judiciară: două cazuri, față de unul la Akkerman. Diferența e de "+
+      "un singur pasaj codificat — sugestivă, nu demonstrativă.",
+    en:"Judicial installation: two cases against Akkerman's one. The difference is a single "+
+      "coded passage — suggestive, not demonstrated.",
+    c:"conjectural", s:"Plamadeala 2026, Tab. 4"}],
+  kro:"Moldova pierde gura Dunării.", ken:"Moldavia loses the Danube mouth.", kc:"attested"},
+ alba:{tro:"Portul de la Nistru, în cinci săptămâni", ten:"The Dniester port, in five weeks",
+  claims:[
+   {ro:"Cetatea cade în prima săptămână din august 1484; forțele lui Meñli I Giray participă.",
+    en:"The fortress falls in the first week of August 1484; Meñli I Giray's forces take part.",
+    c:"attested", s:"Beldiceanu 1964"},
+   {ro:"Bisericile orașului sunt transformate în moschei și se citește hutba.",
+    en:"The town's churches are converted to mosques and the hutbe is read.",
+    c:"attested", s:"Aşıkpaşazâde"},
+   {ro:"Ziua exactă diferă: 3, 5 sau 7 august, după istoriografie.",
+    en:"The exact day differs: 3, 5 or 7 August, depending on the historiography.",
+    c:"reconstructed", s:tr=>tr("Istoria României în date; literatura română",
+                                "Istoria României în date; Romanian literature")},
+   {ro:"Acomodare fiscală — structuri de impunere păstrate cu modificări — este documentată.",
+    en:"Tax accommodation — assessment structures retained with modification — is documented.",
+    c:"reconstructed", s:tr=>tr("Plamadeala 2026, Tab. 5 · o unitate, o sursă",
+                                "Plamadeala 2026, Tab. 5 · one unit, one source")},
+   {ro:"Continuitate juridică nu este documentată aici, spre deosebire de Kili.",
+    en:"Legal continuity is not documented here, unlike at Kili.",
+    c:"attested", s:tr=>tr("Plamadeala 2026, Tab. 5 — zero de corpus, nu de istorie",
+                           "Plamadeala 2026, Tab. 5 — a corpus zero, not a historical one")},
+   {ro:"Includerea elitelor locale rămâne fără nicio atestare.",
+    en:"Local elite inclusion carries no attestation at all.",
+    c:"conjectural", s:null}],
+  kro:"Moldova rămâne fără ieșire la mare.", ken:"Moldavia is left with no outlet to the sea.",
+  kc:"attested"},
+ tighina:{tro:"A treia enclavă", ten:"The third enclave",
+  claims:[
+   {ro:"Tighina este predată lui Soliman I în 1538 și redenumită Bender.",
+    en:"Tighina is surrendered to Süleyman I in 1538 and renamed Bender.",
+    c:"attested", s:tr=>tr("campania din 1538","the 1538 campaign")},
+   {ro:"Nu există nicio codare istimâlet pentru acest loc.",
+    en:"There is no istimâlet coding for this place at all.",
+    c:"attested", s:tr=>tr("setul de date","the dataset")}],
+  kro:"Stăpânirea se întinde; modelul de dovezi nu.",
+  ken:"Rule expands; the evidence model does not.", kc:"attested"}
+};
+/* aceleași proprietăți ca înainte, ca locurile de desenare să nu se schimbe */
+Object.values(STORIES).forEach(S=>{
+  Object.defineProperty(S,"title",{get(){return tr(this.tro,this.ten);}});
+  Object.defineProperty(S,"key",{get(){return {t:tr(this.kro,this.ken),c:this.kc};}});
+  S.claims.forEach(c=>{
+    Object.defineProperty(c,"t",{get(){return tr(this.ro,this.en);}});
+    const src=c.s;
+    if(typeof src==="function")
+      Object.defineProperty(c,"sl",{get(){return src(tr);}});
+    else Object.defineProperty(c,"sl",{get(){return src;}});
+  });
+});
+
+const CERT={attested:["atestat","attested"],reconstructed:["reconstituit","reconstructed"],
+            conjectural:["ipotetic","conjectural"]};
+const CERT_RO=new Proxy({},{get:(_,k)=>CERT[k]?tr(CERT[k][0],CERT[k][1]):k});
+
+const PERIODS=[
+ {id:"p0",ro:"Petru Aron 1455",en:"Petru Aron 1455",from:M(1455,1),to:M(1465,1)},
+ {id:"p1",ro:"Ambele moldovenești",en:"Both Moldavian",from:M(1465,1),to:M(1484,7)},
+ {id:"p2",ro:"Între cele două căderi",en:"Between the two falls",from:M(1484,7),to:M(1484,8)},
+ /* Intervalul pe care v2 îl numește decidabil: instalarea administrativă
+    și simbolică se petrece în anul cuceririi, iar o fază de consolidare
+    abia în 1491. Dacă dimensiunile conciliante se prind undeva, aici se
+    prind — și tot aici corpusul e cel mai subțire. */
+ {id:"pG",ro:"Intervalul 1484–1491",en:"The 1484–1491 interval",from:M(1484,9),to:M(1491,1),gap:true},
+ {id:"p3",ro:"Ambele otomane",en:"Both Ottoman",from:M(1484,8),to:M(1538,9)},
+ {id:"p4",ro:"Bender",en:"Bender",from:M(1538,9),to:M(1595,1)},
+ {id:"p5",ro:"Fâșia",en:"The strip",from:M(1595,1),to:M(1600,12)}];
+
+/* Repere din v2 §1 și din articolul-pereche despre Amasya și Wallachia.
+   Nu au coloane: nu sunt dimensiuni, sunt context de dependență
+   negociată — cadrul pe care Panaite îl numește „plătitori de tribut la
+   nord de Dunăre", un statut juridic intermediar, nici provincie, nici
+   stat egal. */
+/* ==================================================================== *
+ *  Cele două instrumente ale lui Bayezid II pe această frontieră.
+ *
+ *  Panaite (2019) arată că plătitorii de tribut de la nord de Dunăre
+ *  stăteau într-un statut juridic intermediar: nici provincie încorporată,
+ *  nici stat egal. Harta trata până acum controlul ca binar — moldovenesc
+ *  sau otoman — și pierdea exact distincția care arată politica: Bayezid
+ *  a ANEXAT două porturi și a LĂSAT țara tributară. Istimâletul, dacă
+ *  s-a aplicat, s-a aplicat doar în prima categorie.
+ * ==================================================================== */
+const TRIBUTARY=[
+ {terr:"mold", from:M(1455,1), to:M(1457,4), who:"Petru Aron",
+  note:"Prima acceptare a suzeranității; haraci consimțit."},
+ {terr:"mold", from:M(1485,9), to:M(1600,12), who:"Ștefan cel Mare și urmașii",
+  note:"După omagiul de la Colomeea și reluarea tributului. Țara rămâne tributară "+
+       "tot restul ferestrei — nu devine provincie."},
+ {terr:"wal",  from:M(1450,1), to:M(1600,12), who:"domnii munteni",
+  note:"Dependență tributară continuă pe tot intervalul hărții."}
+];
+const tributaryAt=t=>TRIBUTARY.filter(x=>t>=x.from&&t<x.to).map(x=>x.terr);
+
+/* ==================================================================== *
+ *  Efectul — ce ar măsura fiecare dimensiune, și dacă acel registru
+ *  există în fereastra hărții.
+ *
+ *  Modelul codifică mecanisme, adică ce spun sursele că s-a făcut. Efectul
+ *  este altceva: dacă oamenii au rămas sau au fugit, dacă vama a ținut,
+ *  dacă bisericile au supraviețuit. Niciuna dintre aceste variabile nu
+ *  există în corpus. Panoul nu inventează efectul; arată unde ar fi
+ *  măsurabil și că nu e încă măsurat.
+ * ==================================================================== */
+const EFFECT={
+ COERCION: {mro:"Pierderi, captivi, distrugeri", men:"Losses, captives, destruction",
+            reg:tr=>tr("cronici otomane și moldovenești","Ottoman and Moldavian chronicles"),
+            from:1457, to:1512},
+ ADMIN:    {mro:"Cadiu numit, sangeac înregistrat", men:"Kadı appointed, sancak registered",
+            reg:tr=>tr("registre de inspecție (teftiş)","inspection registers (teftiş)"),
+            from:1491, to:1505},
+ ECONOMIC: {mro:"Volum vamal, trafic portuar", men:"Customs volume, port traffic",
+            reg:tr=>tr("registre gümrük","gümrük registers"), from:null, to:null},
+ SECURITY: {mro:"Populație rămasă sau fugită", men:"Population stayed or fled",
+            reg:tr=>tr("tahrir (hane), înainte și după","tahrir (hane), before and after"),
+            from:null, to:null},
+ /* Corecție. Panoul spunea că nu există registru. Savaș citează însă un
+    ahkâm defteri din 906/1501, din domnia lui Bayezid II, publicat de
+    Şahin și Emecen (1994) — în fereastră și din domnia potrivită. Seria
+    ahkâm pe eyalete începe în 1742; aceasta este altceva. */
+ LEGAL:    {mro:"Cauze judecate după norma veche", men:"Cases judged by the older norm",
+            reg:tr=>tr("ahkâm defteri 906/1501 (Şahin–Emecen 1994); sicill de cadiu",
+                       "ahkâm defteri 906/1501 (Şahin–Emecen 1994); kadı sicilleri"),
+            from:1501, to:1501},
+ FISCAL:   {mro:"Dările față de perioada moldovenească",
+            men:"Dues against the Moldavian period",
+            reg:tr=>tr("tahrir + kanunname","tahrir + kanunname"), from:null, to:null},
+ INCLUSION:{mro:"Nume locale în timar sau în slujbe", men:"Local names in timar or office",
+            reg:tr=>tr("defter de timar; istimâletnâme (Münşeâtü's-selâtîn)",
+                       "timar defter; istimâletnâme (Münşeâtü's-selâtîn)"),
+            from:null, to:null},
+ RELIGIOUS:{mro:"Biserici rămase în funcțiune, vakıf-uri",
+            men:"Churches still functioning, vakıf",
+            reg:tr=>tr("registre de vakıf","vakıf registers"), from:null, to:null}
+};
+Object.values(EFFECT).forEach(e=>{
+  Object.defineProperty(e,"m",{get(){return tr(this.mro,this.men);}});
+  const f=e.reg; Object.defineProperty(e,"regl",{get(){return f(tr);}});
+});
+const DECIDABLE=[1484,1491];   /* intervalul în care v2 spune că răspunsul e decidabil */
+
+const CONTEXT=[
+ {at:M(1455,1), t:"Petru Aron acceptă suzeranitatea otomană",
+  x:"Dependența negociată precedă cucerirea cu 29 de ani. Porturile nu cad "+
+    "dintr-o relație de egalitate, ci dintr-una deja tributară."},
+ {at:M(1481,1), t:"Bayezid II urcă pe tron după Amasya",
+  x:"Guvernase Amasya ca șehzade: fiscalitate, patronaj, structuri religioase. "+
+    "Articolul-pereche susține că acolo s-a format stilul instituțional, iar "+
+    "frontiera dunăreană l-a testat."},
+ {at:M(1491,1), t:"Începe faza de consolidare / inspecție",
+  x:"Data poartă în v2 marcajul [DATE VERIFICATION REQUIRED]. Coincide cu "+
+    "începutul registrelor de inspecție 1491–1505 — seria în care întrebarea "+
+    "despre istimâlet ar fi decidabilă."}];
+
+/* ==================================================================== *
+ *  Proiecţie geografică + cameră.
+ *  Scrisă de mână: panoul de previzualizare nu încarcă nimic de pe web,
+ *  deci o bibliotecă 3D de pe CDN nu s-ar desena niciodată aici.
+ * ==================================================================== */
+const LON0=29.5,LAT0=46.2,COS=Math.cos(46.4*Math.PI/180),S=40;
+const px=lo=>(lo-LON0)*COS*S, pz=la=>-(la-LAT0)*S;
+
+/* ==================================================================== *
+ *  Cetatea de dovezi.
+ *
+ *  Opt bare alăturate, fără axă, nu se puteau citi: nu se vedea care bară
+ *  e care dimensiune, iar la două porturi apropiate cele șaisprezece se
+ *  amestecau. Acum fiecare port este un singur obiect — un turn din opt
+ *  asize, de jos în sus în ordinea fixă a dimensiunilor. Poziția spune
+ *  care dimensiune, lățimea spune cât de solidă e dovada.
+ *
+ *  Metafora nu e ornament. Baza e zidită (cucerire, administrație),
+ *  mijlocul mai subțire, iar vârful — tocmai dimensiunile conciliante
+ *  care ar face din asta istimâlet — e aproape nezidit. Cetatea arată
+ *  neterminată fiindcă dovada este neterminată.
+ * ==================================================================== */
+const CH=7.4;                         /* înălțimea unei asize            */
+const CGAP_E=11;                      /* spațiu între asize, explodat    */
+const WID={direct:15, documented:11, contextual:9, untested:3.2, problematic:15};
+const SOLID={direct:1, documented:1, contextual:1, untested:1, problematic:0};
+const courseY=(i,exp)=>i*(exp?CH+CGAP_E:CH);
+const STACK=courseY(DIMS.length-1,true)+CH;
+
+/* Camera privește spre gurile Dunării, nu spre originea proiecției: tot
+   ce contează — cele două porturi, Benderul, fâșia — încape în două grade,
+   iar o cameră centrată pe mijlocul extentului le lasă într-un colț. */
+let FOCUS=[px(29.6),0,pz(46.1)];
+const focusOn=(lon,lat)=>{FOCUS=[px(lon),0,pz(lat)];};
+let cam={th:-0.34,ph:0.86,r:440,aim:28};
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+let W=0,H=0,FOC=0;
+
+function basis(){
+  /* camera trece prin stratul de animație: schimbarea vederii alunecă */
+  const th=av("cam.th",cam.th,6), ph=av("cam.ph",cam.ph,6),
+        r=av("cam.r",cam.r,5),   aim=av("cam.aim",cam.aim,5);
+  /* punctul vizat alunecă odată cu selecția, nu sare */
+  const tgt=[av("fx",FOCUS[0],4),aim,av("fz",FOCUS[2],4)];
+  const eye=[tgt[0]+r*Math.sin(ph)*Math.sin(th), aim+r*Math.cos(ph),
+             tgt[2]+r*Math.sin(ph)*Math.cos(th)];
+  let f=[tgt[0]-eye[0],tgt[1]-eye[1],tgt[2]-eye[2]];
+  const fl=Math.hypot(...f); f=f.map(v=>v/fl);
+  /* right = cross(forward, worldUp) = (-f.z, 0, f.x).
+     Prima versiune avea (f.z, 0, -f.x) — exact opusul — și rotea harta cu
+     180°: Brăila ieșea la est de Chilia, Suceava la sud. Testul care
+     prinde asta este banal și merită păstrat: vest la stânga, est la
+     dreapta, nord în sus. */
+  let rt=[-f[2],0,f[0]]; const rl=Math.hypot(rt[0],rt[2])||1; rt=[rt[0]/rl,0,rt[2]/rl];
+  const up=[rt[1]*f[2]-rt[2]*f[1], rt[2]*f[0]-rt[0]*f[2], rt[0]*f[1]-rt[1]*f[0]];
+  return {eye,f,rt,up};
+}
+/* ==================================================================== *
+ *  Mișcare.
+ *
+ *  Numai mișcare care răspunde unei acțiuni și arată ce s-a schimbat:
+ *  asize care cresc când cade cetatea, valul care se ridică la anexare,
+ *  camera care alunecă la schimbarea vederii, un inel la luna cuceririi.
+ *  Nimic care se mișcă de la sine. Fiecare valoare animată are o țintă;
+ *  bucla doarme când toate au ajuns, ca să nu ardă procesorul degeaba.
+ * ==================================================================== */
+const REDUCED=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const A={};                       /* cheie → {v, t}  (valoare, țintă)   */
+function av(key,target,rate){
+  let a=A[key]; if(!a){a=A[key]={v:target,r:rate||8};}
+  a.t=target; if(rate) a.r=rate;
+  return REDUCED?(a.v=target):a.v;
+}
+function stepAnim(dt){
+  let moving=false;
+  for(const k in A){const a=A[k], d=a.t-a.v;
+    if(Math.abs(d)<0.004){a.v=a.t;continue;}
+    a.v+=d*Math.min(1,dt*a.r); moving=true;}
+  return moving;
+}
+/* Trasarea hotarului merge în timp liniar, nu cu easing exponențial: o
+   linie trasă cu rigla are viteză constantă, iar un easing care se
+   apropie asimptotic de capăt ar face ultima latură să se târască. */
+const AX_MS=1500, axT0={};
+function axPhase(id,active){
+  if(!active){ delete axT0[id]; return 0; }
+  if(REDUCED) return 1;
+  if(axT0[id]===undefined) axT0[id]=performance.now();
+  return Math.max(0,Math.min(1,(performance.now()-axT0[id])/AX_MS));
+}
+const axRunning=()=>Object.keys(axT0).some(k=>performance.now()-axT0[k]<AX_MS+60);
+
+let pulses=[];                    /* inele la momentul cuceririi        */
+const addPulse=(x,z)=>{ if(!REDUCED) pulses.push({x,z,t0:performance.now()}); };
+let selRings=[];                  /* confirmarea unui clic pe cetate    */
+const addSel=(x,z)=>{ if(!REDUCED) selRings.push({x,z,t0:performance.now()}); };
+
+let raf=null,last=0;
+function loop(ts){
+  const dt=Math.min((ts-last)/1000,0.05); last=ts;
+  const moving=stepAnim(dt);
+  pulses=pulses.filter(p=>ts-p.t0<1600);
+  selRings=selRings.filter(p=>ts-p.t0<700);
+  draw();
+  raf=(moving||pulses.length||selRings.length||axRunning())
+      ?requestAnimationFrame(loop):null;
+}
+function kick(){ if(!raf){last=performance.now(); raf=requestAnimationFrame(loop);} }
+
+let B=basis();
+function proj(p){
+  const d=[p[0]-B.eye[0],p[1]-B.eye[1],p[2]-B.eye[2]];
+  const vz=d[0]*B.f[0]+d[1]*B.f[1]+d[2]*B.f[2];
+  if(vz<=1) return null;
+  const vx=d[0]*B.rt[0]+d[1]*B.rt[1]+d[2]*B.rt[2];
+  const vy=d[0]*B.up[0]+d[1]*B.up[1]+d[2]*B.up[2];
+  return {x:W/2+vx*FOC/vz, y:H/2-vy*FOC/vz, z:vz};
+}
+
+/* ==================================================================== *
+ *  Stare — o singură sursă
+ * ==================================================================== */
+const state={t:415, dims:new Set(DIMS.map(d=>d.id)),
+  layers:{terr:true,trib:true,annex:true,cols:true,sim:false,labels:true},
+  sel:{kind:"place",id:"alba"}, exploded:false, tab:"policy", explain:null,
+  /* Simularea de surse. Cheie "loc|dimensiune" → număr de surse
+     independente. Nedefinit = valoarea reală din corpus. */
+  src:{}, playing:false, hover:null};
+
+/* Sursele reale: exact una pentru fiecare rând care are ceva, zero pentru
+   restul. Aceasta este constatarea negativă centrală a lui v2 — niciun
+   rând nu stă pe mai mult de o sursă independentă — iar simularea există
+   ca s-o poți clinti și vedea ce se întâmplă. */
+/* O dimensiune are o sursă dacă în corpus există un pasaj care o atinge.
+   „untested" înseamnă tocmai că nu există — zero. „problematic" înseamnă
+   că există și contrazice — una. Prima versiune folosea rangul, care le
+   inversa pe amândouă: acomodarea religioasă la Akkerman ieșea cu zero
+   surse deși stă pe Aşıkpaşazâde, iar cele netestate ieșeau cu una. */
+const baseSrc=(pid,d)=>stFor(pid,d)==="untested"?0:1;
+const srcOf=(pid,d)=>{const k=pid+"|"+d.id;
+  return state.src[k]===undefined?baseSrc(pid,d):state.src[k];};
+const CORROB=2;                       /* pragul de coroborare            */
+
+/* Lățimea desenată ține acum de două lucruri: statutul (ce fel de dovadă)
+   și numărul de surse (cât de mult se sprijină). Zero surse = asiza nu
+   există; două sau mai multe = coroborată, zidită dublu. */
+function courseLook(pid,d){
+  const k=stFor(pid,d), n=srcOf(pid,d), base=baseSrc(pid,d);
+  /* Zero prin natura corpusului arată altfel decât zero fiindcă
+     utilizatorul a scos sursa: primul e un pin subțire — nu s-a zidit
+     niciodată — al doilea o fantomă punctată: era zidit și nu mai e. */
+  if(n<=0) return base===0
+    ? {w:WID.untested, c:EV.untested.c, fill:1, n}
+    : {w:WID.direct, c:"#9a8f7d", fill:0, gone:true, n};
+  if(n>=CORROB) return {w:WID.direct+2, c:EV[k].c, fill:1, corrob:true, n};
+  return {w:WID[k], c:EV[k].c, fill:SOLID[k], n};
+}
+const $=id=>document.getElementById(id);
+const periodAt=t=>PERIODS.filter(p=>t>=p.from&&t<p.to);
+/* numele bilingve se expun prin aceleași proprietăți folosite până acum,
+   ca să nu fie nevoie să se schimbe niciun loc de desenare */
+ANNEX.forEach(a=>Object.defineProperty(a,"name",{get(){return tr(this.ro,this.en);}}));
+PERIODS.forEach(p=>Object.defineProperty(p,"n",{get(){return tr(this.ro,this.en);}}));
+
+/* ==================================================================== *
+ *  Desen — algoritmul pictorului: totul într-o listă, sortată după
+ *  adâncime, pictată de la spate spre faţă.
+ * ==================================================================== */
+let hit=[];   /* {poly, kind, id, dim} pentru click */
+
+function faceDepth(ps){ let s=0; for(const p of ps) s+=p.z; return s/ps.length; }
+function area2(ps){ let a=0; for(let i=0;i<ps.length;i++){const q=ps[(i+1)%ps.length];
+  a+=ps[i].x*q.y-q.x*ps[i].y;} return a/2; }
+
+function poly(ctx,ps,fill,stroke,dash,lw){
+  ctx.beginPath(); ps.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.closePath();
+  if(fill){ctx.fillStyle=fill; ctx.fill();}
+  if(stroke){ctx.setLineDash(dash||[]); ctx.lineWidth=lw||1; ctx.strokeStyle=stroke; ctx.stroke();
+             ctx.setLineDash([]);}
+}
+
+function boxFaces(cx,y0,y1,cz,w){
+  const h=w/2, c=[[cx-h,y0,cz-h],[cx+h,y0,cz-h],[cx+h,y0,cz+h],[cx-h,y0,cz+h],
+                  [cx-h,y1,cz-h],[cx+h,y1,cz-h],[cx+h,y1,cz+h],[cx-h,y1,cz+h]];
+  return [[4,5,6,7],[0,3,2,1],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]]
+    .map(f=>f.map(i=>c[i]));
+}
+
+function draw(){
+  B=basis(); hit=[];
+  const t=state.t, items=[];
+
+  const trib=tributaryAt(t);
+  if(state.layers.terr){
+    for(const k in TERR) for(const ring of TERR[k]){
+      const ps=ring.map(([lo,la])=>proj([px(lo),0,pz(la)]));
+      if(ps.some(p=>!p)) continue;
+      const isTrib=state.layers.trib&&trib.includes(k);
+      items.push({d:faceDepth(ps)+1e4, f:()=>{
+        poly(ctx,ps,TCOL[k]+"4d",TCOL[k]+"99",null,0.8);
+        /* Hașură pentru teritoriul tributar: ținut fără a fi anexat.
+           Nu e o nuanță de culoare, fiindcă nu e o cantitate — e un alt
+           statut juridic, și trebuie să arate ca altceva. */
+        if(isTrib){
+          const xs=ps.map(p=>p.x), ys=ps.map(p=>p.y);
+          const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+          ctx.save();
+          ctx.beginPath(); ps.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+          ctx.closePath(); ctx.clip();
+          ctx.strokeStyle="#7d2d1e55"; ctx.lineWidth=0.8;
+          for(let d0=y0-(x1-x0); d0<y1; d0+=7){
+            ctx.beginPath(); ctx.moveTo(x0,d0); ctx.lineTo(x1,d0+(x1-x0)); ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }});
+    }
+  }
+  /* Teritoriul anexat se ridică din plan ca un val de pământ: pereți
+     plus o suprafață superioară. Cel codificat e zidit; cel necodificat
+     rămâne o linie trasă pe jos, ca o însemnare de hotarnic. Diferența
+     dintre „ținut” și „doar luat” se vede ca volum, nu ca nuanță. */
+  /* ------------------------------------------------------------------ *
+   *  Anexarea, ca tranziție.
+   *
+   *  NU ca front care înaintează. Nu știm direcția sau ordinea în care
+   *  terenul a trecut, iar cele două cetăți au căzut la cinci săptămâni
+   *  una de alta, urmate de crearea sangeacurilor. Ce știm este că a fost
+   *  un act administrativ: o parcelă trasă cu linia într-un registru.
+   *
+   *  Deci hotarul se trage pe contur, zidul se ridică în urma liniei pe
+   *  măsură ce trece, iar pământul dinăuntru își schimbă culoarea de la
+   *  vechiul stăpân la cel nou. Un teritoriu necodificat primește doar
+   *  linia: s-a tras hotarul, nu s-a zidit nimic.
+   * ------------------------------------------------------------------ */
+  if(state.layers.annex){
+    for(const a of ANNEX){
+      const ph=axPhase(a.id,t>=a.from);
+      if(ph<=0) continue;
+      const n=a.ring.length, P=a.ring.map(([lo,la])=>[px(lo),pz(la)]);
+      const seg=i=>Math.max(0,Math.min(1,ph*n-i));   /* cât s-a tras pe latura i */
+      const ease=k=>k*k*(3-2*k);
+
+      /* pământul cedat: vechea culoare se stinge, cea nouă se aprinde */
+      const grd=P.map(([x,z])=>proj([x,0.35,z]));
+      if(!grd.some(v=>!v)){
+        const k=ease(ph);
+        items.push({d:faceDepth(grd)+60, f:()=>{
+          if(k<1) poly(ctx,grd,`rgba(192,112,58,${(1-k)*0.5})`,null,null,0);
+          poly(ctx,grd,`rgba(158,43,32,${k*(a.coded?0.30:0.10)})`,null,null,0);
+        }});
+      }
+
+      if(a.coded){
+        const hW=3.0;
+        for(let i=0;i<n;i++){
+          const s=ease(seg(i)); if(s<=0.001) continue;
+          const p=P[i], q=P[(i+1)%n];
+          /* latura crește în sus odată ce linia a trecut peste ea */
+          const quad=[[p[0],0,p[1]],[q[0],0,q[1]],
+                      [q[0],hW*s,q[1]],[p[0],hW*s,p[1]]].map(proj);
+          if(quad.some(v=>!v)) continue;
+          items.push({d:faceDepth(quad)+40,
+            f:()=>poly(ctx,quad,"#a8452fcc","#7d2d1e",null,0.5)});
+        }
+        if(ph>0.985){
+          const top=P.map(([x,z])=>proj([x,hW,z]));
+          if(!top.some(v=>!v))
+            items.push({d:faceDepth(top)+38, f:()=>poly(ctx,top,"#c2614a66","#7d2d1e",null,0.6)});
+        }
+      }
+
+      /* linia de hotar: se trage latură cu latură, de la primul punct */
+      const dash=a.coded?null:(a.hyp?[2,4]:[6,4]);
+      const lineY=a.coded?3.05:0.6;
+      for(let i=0;i<n;i++){
+        const s=seg(i); if(s<=0.001) continue;
+        const p=P[i], q=P[(i+1)%n];
+        const e=[p[0]+(q[0]-p[0])*s, p[1]+(q[1]-p[1])*s];
+        const A1=proj([p[0],lineY,p[1]]), B1=proj([e[0],lineY,e[1]]);
+        if(!A1||!B1) continue;
+        const lead=s<1&&s>0;
+        items.push({d:Math.min(A1.z,B1.z)-2, f:()=>{
+          ctx.setLineDash(dash||[]);
+          ctx.strokeStyle=lead?"#9E2B20":(a.coded?"#7d2d1e":"#8e2f2f");
+          ctx.lineWidth=lead?2.2:(a.coded?0.9:1.4);
+          ctx.beginPath(); ctx.moveTo(A1.x,A1.y); ctx.lineTo(B1.x,B1.y); ctx.stroke();
+          ctx.setLineDash([]);
+          if(lead){                       /* vârful peniței care trage linia */
+            ctx.beginPath(); ctx.arc(B1.x,B1.y,2.4,0,6.284);
+            ctx.fillStyle="#9E2B20"; ctx.fill();
+          }
+        }});
+      }
+    }
+  }
+
+  if(state.layers.cols){
+    for(const pl of PLACES){
+      /* înainte de cucerire turnul nu există: ținem creșterea la zero,
+         ca să pornească de jos când ajunge luna, nu să apară întreg */
+      if(!pl.coded) continue;
+      if(t<pl.ott){ DIMS.forEach(d=>{const a=A["g."+pl.id+"."+d.id]; if(a) a.v=a.t=0;});
+                    continue; }
+      const cx=px(pl.lon), cz=pz(pl.lat);
+      DIMS.forEach((dim,di)=>{
+        if(!state.dims.has(dim.id)) return;
+        const L=courseLook(pl.id,dim);
+        const K=pl.id+"."+dim.id;
+        /* Asizele se zidesc una după alta: fiecare pornește cu o mică
+           întârziere peste cea de dedesubt, așa că turnul crește de jos
+           în sus în loc să apară dintr-odată. */
+        const grow=av("g."+K,1,4.2+di*0.45);
+        const w=av("w."+K,L.w,7);          /* lățimea se mută când schimbi sursele */
+        const y0=courseY(di,state.exploded), y1=y0+CH*Math.max(grow,0.001);
+        if(grow<0.02) return;
+        const on=state.hover&&state.hover.id===pl.id&&state.hover.dim===dim.id;
+
+        if(state.layers.sim && !L.corrob){
+          for(const face of boxFaces(cx,y0,y1,cz,WID.direct+1.5)){
+            const ps=face.map(proj); if(ps.some(p=>!p)||area2(ps)>=0) continue;
+            items.push({d:faceDepth(ps)-0.4,
+              f:()=>poly(ctx,ps,"#1e7a5f14","#1e7a5f77",null,0.6)});
+          }
+        }
+        for(const face of boxFaces(cx,y0,y1,cz,w)){
+          const ps=face.map(proj); if(ps.some(p=>!p)||area2(ps)>=0) continue;
+          items.push({d:faceDepth(ps), f:()=>{
+            if(L.gone)      poly(ctx,ps,null,"#9a8f7d",[1,3],0.8);   /* retrasă     */
+            else if(L.fill) poly(ctx,ps,L.c,on?"#2b2317":"#00000026",null,on?1.4:0.5);
+            else            poly(ctx,ps,null,L.c,[3,2],on?1.6:1.1);  /* contestată  */
+            if(L.corrob){ ctx.setLineDash([]); ctx.lineWidth=1.3;
+              ctx.strokeStyle="#0f4d39"; ctx.stroke(); }             /* coroborată  */
+          }});
+        }
+        const mk=proj([cx,(y0+y1)/2,cz]);
+        if(mk) hit.push({x:mk.x,y:mk.y,kind:"col",id:pl.id,dim:dim.id,
+                         label:`${pl.name} · ${dim.n}`,
+                         sub:`${EV[stFor(pl.id,dim)].lab} · ${L.n} sursă${L.n===1?"":"e"}`});
+      });
+    }
+  }
+
+  for(const pl of PLACES){
+    const isOtt=pl.ott!==null&&t>=pl.ott;
+    for(const face of boxFaces(px(pl.lon),0,7,pz(pl.lat),2.6)){
+      const ps=face.map(proj); if(ps.some(p=>!p)) continue;
+      if(area2(ps)>=0) continue;
+      items.push({d:faceDepth(ps), f:()=>poly(ctx,ps,isOtt?"#8e2f2f":"#2b2317",null,null,0)});
+    }
+    if(pl.upkeep){
+      const ring=[]; for(let i=0;i<24;i++){const a=i/24*Math.PI*2;
+        ring.push(proj([px(pl.lon)+Math.cos(a)*4,0.5,pz(pl.lat)+Math.sin(a)*4]));}
+      if(!ring.some(p=>!p))
+        items.push({d:faceDepth(ring)+8e3, f:()=>poly(ctx,ring,null,"#c0703a",null,1.6)});
+    }
+    const pp=proj([px(pl.lon),8,pz(pl.lat)]);
+    if(pp) hit.push({x:pp.x,y:pp.y,kind:"place",id:pl.id});
+  }
+
+  ctx.clearRect(0,0,W,H);
+  items.sort((a,b)=>b.d-a.d).forEach(i=>i.f());
+
+  /* Inelul cuceririi: un singur moment, la luna în care cade cetatea.
+     Se stinge în ~1,6 s și nu se repetă până nu treci iar peste ea. */
+  const now=performance.now();
+  for(const p of pulses){
+    const k=(now-p.t0)/1600; if(k>1) continue;
+    const c=proj([p.x,2,p.z]); if(!c) continue;
+    const rad=(8+k*46)*(FOC/c.z)*0.9;
+    ctx.beginPath(); ctx.arc(c.x,c.y,Math.max(rad,1),0,6.284);
+    ctx.strokeStyle=`rgba(158,43,32,${(1-k)*0.75})`; ctx.lineWidth=2*(1-k)+0.4;
+    ctx.stroke();
+  }
+
+  /* Etichetele se ciocneau unele de altele în ghemul de la gurile Dunării:
+     patru cetăți în mai puțin de două grade. Se desenează în ordinea
+     importanței — selecția întâi, apoi cele codificate — iar cele care ar
+     suprapune o etichetă deja pusă se sar. Mai bine lipsă decât ilizibilă. */
+  /* Semnul de cetate: un turn crenelat, desenat în spațiul ecranului
+     după proiecție, deci rămâne citibil la orice unghi și zoom. Culoarea
+     spune cine o ține; inelul de dedesubt, cine a plătit-o. Un pin
+     cilindric nu spunea nimănui că acolo e o cetate. */
+  function fortGlyph(p,x,y,isOtt,sel){
+    const w=11, h=9, m=w/3;
+    ctx.beginPath();
+    ctx.moveTo(x-w/2, y);
+    ctx.lineTo(x-w/2, y-h+3);
+    for(let i=0;i<3;i++){                       /* trei merloane */
+      const x0=x-w/2+i*m;
+      ctx.lineTo(x0,       y-h);
+      ctx.lineTo(x0+m*0.6, y-h);
+      ctx.lineTo(x0+m*0.6, y-h+3);
+      if(i<2) ctx.lineTo(x0+m, y-h+3);
+    }
+    ctx.lineTo(x+w/2, y-h+3); ctx.lineTo(x+w/2, y); ctx.closePath();
+    ctx.fillStyle=isOtt?"#9E2B20":"#1B1915"; ctx.fill();
+    if(sel){ ctx.lineWidth=1.6; ctx.strokeStyle="#1B1915"; ctx.stroke(); }
+    if(p.upkeep){                                /* inel: întreținută de Moldova */
+      ctx.beginPath(); ctx.ellipse(x,y+2.5,w*0.62,3,0,0,6.284);
+      ctx.strokeStyle="#9C6B28"; ctx.lineWidth=1.4; ctx.stroke();
+    }
+  }
+  for(const pl of PLACES){
+    const p=proj([px(pl.lon),0.5,pz(pl.lat)]); if(!p) continue;
+    fortGlyph(pl,p.x,p.y,pl.ott!==null&&t>=pl.ott,pl.id===state.sel.id);
+  }
+
+  /* inelul de selecție: confirmă clicul pe cetate */
+  for(const s of selRings){
+    const k=(now-s.t0)/700; if(k>1) continue;
+    const c=proj([s.x,3,s.z]); if(!c) continue;
+    ctx.beginPath(); ctx.arc(c.x,c.y,10+k*26,0,6.284);
+    ctx.strokeStyle=`rgba(27,25,21,${(1-k)*0.6})`; ctx.lineWidth=1.8*(1-k)+0.3; ctx.stroke();
+  }
+
+  /* ------------------------------------------------------------------ *
+   *  Asizele, numite pe hartă.
+   *
+   *  Un turn fără nume de asize este tot un grafic fără axă: vezi că una
+   *  e lată și alta subțire, dar nu care e care. Se scriu doar pentru
+   *  cetatea selectată — opt etichete pe fiecare turn ar acoperi harta —
+   *  cu o linie de trimitere de la asiză la text.
+   * ------------------------------------------------------------------ */
+  const selPl=PLACES.find(p=>p.id===state.sel.id&&p.coded);
+  if(selPl && t>=selPl.ott && state.layers.cols){
+    const cx=px(selPl.lon), cz=pz(selPl.lat);
+    const rows=[];
+    DIMS.forEach((dim,di)=>{
+      if(!state.dims.has(dim.id)) return;
+      const L=courseLook(selPl.id,dim), y=courseY(di,state.exploded)+CH/2;
+      const a=proj([cx,y,cz]); if(!a) return;
+      rows.push({a,dim,L});
+    });
+    rows.sort((p,q)=>p.a.y-q.a.y);
+    let lastY=-1e9;
+    ctx.font="10px "+getComputedStyle(document.body).fontFamily;
+    ctx.textAlign="left"; ctx.textBaseline="middle";
+    for(const r of rows){
+      let ly=Math.max(r.a.y,lastY+12); lastY=ly;
+      const lx=r.a.x+38;
+      const txt=r.dim.n, sub=r.L.n===0?"":`${r.L.n}`;
+      const w=ctx.measureText(txt).width+(sub?14:0);
+      if(lx+w>W-6) continue;
+      ctx.beginPath(); ctx.moveTo(r.a.x+6,r.a.y);
+      ctx.lineTo(lx-6,ly); ctx.strokeStyle="rgba(27,25,21,.32)"; ctx.lineWidth=0.7; ctx.stroke();
+      ctx.fillStyle="rgba(239,237,230,.88)"; ctx.fillRect(lx-3,ly-6,w+8,12);
+      ctx.fillStyle=r.L.gone?"#75705F":r.L.c;
+      ctx.fillRect(lx-1,ly-3.5,3,7);
+      ctx.fillStyle="#1B1915"; ctx.fillText(txt,lx+6,ly);
+      if(sub){ ctx.fillStyle="#75705F"; ctx.fillText("·"+sub,lx+6+ctx.measureText(txt).width+2,ly); }
+    }
+    ctx.textBaseline="alphabetic";
+  }
+
+  if(state.layers.labels){
+    const placed=[];
+    const order=PLACES.slice().sort((a,b)=>
+      (b.id===state.sel.id)-(a.id===state.sel.id) || b.coded-a.coded || b.upkeep-a.upkeep);
+    for(const pl of order){
+      const p=proj([px(pl.lon),11,pz(pl.lat)]); if(!p) continue;
+      const txt=pl.alt?pl.name+" · "+pl.alt:pl.name;
+      const sel=pl.id===state.sel.id;
+      ctx.font=(sel?"600 ":"")+"11px Georgia,serif";
+      const w=ctx.measureText(txt).width;
+      /* pe un panou îngust o etichetă lungă poate fi mai lată decât
+         intervalul de clamp; atunci se centrează, nu se împinge afară */
+      const lo=w/2+4, hi=W-w/2-4;
+      let x=hi<lo?W/2:Math.max(lo,Math.min(hi,p.x));
+      const r={x0:x-w/2-3,y0:p.y-10,x1:x+w/2+3,y1:p.y+3};
+      if(placed.some(q=>!(r.x1<q.x0||r.x0>q.x1||r.y1<q.y0||r.y0>q.y1))) continue;
+      placed.push(r);
+      ctx.textAlign="center";
+      ctx.fillStyle="rgba(251,248,241,.86)"; ctx.fillRect(r.x0,r.y0,r.x1-r.x0,13);
+      ctx.fillStyle="#2b2317"; ctx.fillText(txt,x,p.y);
+    }
+  }
+}
+
+/* ==================================================================== *
+ *  Panouri
+ * ==================================================================== */
+/* Cheia se desenează de sus în jos ca turnul, ca rândul din panou să stea
+   în dreptul asizei de pe hartă — și pentru locul selectat, nu ca medie
+   peste porturi. O pastilă „cea mai proastă dintre două" ar fi arătat
+   continuitatea juridică subțire deși la Kili e documentată. */
+function renderDims(){
+  const pid=PLACES.some(p=>p.id===state.sel.id&&p.coded)?state.sel.id:"alba";
+  $("dimfilters").innerHTML=DIMS.slice().reverse().map(d=>{
+    const k=stFor(pid,d), s=EV[k];
+    return `<label class="row"><input type="checkbox" data-dim="${d.id}"`+
+     `${state.dims.has(d.id)?" checked":""}>`+
+     `<span class="sw" style="width:${(WID[k]/WID.direct*18).toFixed(1)}px;height:7px;`+
+     `border-radius:1px;background:${SOLID[k]?s.c:"transparent"};`+
+     `border:1px solid ${s.c}"></span>`+
+     `<span class="nm" title="${d.n} — ${s.lab}">${d.n}</span></label>`;}).join("");
+}
+renderDims();
+$("dimfilters").onchange=e=>{const id=e.target.dataset.dim; if(!id)return;
+  e.target.checked?state.dims.add(id):state.dims.delete(id); apply();};
+
+function buildLayers(){
+  const L=[["terr",tr("Teritorii","Territories")],
+           ["trib",tr("Tributar (hașurat)","Tributary (hatched)")],
+           ["annex",tr("Anexat (val)","Annexed (rampart)")],
+           ["cols",tr("Turnuri de dovezi","Evidence towers")],
+           ["sim",tr("Simulare: dacă s-ar confirma","Simulation: if confirmed")],
+           ["labels",tr("Etichete","Labels")]];
+  $("layers").innerHTML=L.map(([k,n])=>
+    `<label class="row"><input type="checkbox" data-layer="${k}"${
+      state.layers[k]?" checked":""}><span class="nm">${n}</span></label>`).join("");
+}
+$("layers").onchange=e=>{const k=e.target.dataset.layer; if(!k)return;
+  state.layers[k]=e.target.checked;
+  apply();};
+
+$("expl").onchange=e=>{state.exploded=e.target.checked;
+  cam.r=state.exploded?620:440; cam.aim=state.exploded?STACK/2:28;
+  if(cam.ph<0.25) cam.ph=0.88; apply();};
+
+/* --- cronologie: cursorul lunar, cu perioadele ca scurtături --------- */
+$("t").oninput=e=>{state.t=+e.target.value; apply();};
+
+/* Rularea timpului sare peste deceniile goale: altfel cele câteva luni
+   cu conținut s-ar pierde în 1811 de luni de nimic. */
+let timer=null;
+const KEY=[M(1455,1),M(1465,1),M(1475,6),M(1481,1),M(1484,6),M(1484,7),M(1484,8),
+           M(1484,9),M(1485,9),M(1491,1),M(1538,9),M(1540,10),M(1595,1)];
+$("play").onclick=()=>{
+  state.playing=!state.playing;
+  $("play").textContent=state.playing?"❚❚":"▶";
+  if(timer){clearInterval(timer);timer=null;}
+  if(state.playing)
+    timer=setInterval(()=>{
+      const nxt=KEY.find(k=>k>state.t);
+      state.t=nxt===undefined?KEY[0]:nxt;
+      $("t").value=state.t; apply();
+    },1600);
+};
+
+function buildPeriods(){
+  $("periods").innerHTML=PERIODS.map(p=>
+    `<button class="chip" data-p="${p.id}">${p.n}</button>`).join(" ");
+}
+$("periods").onclick=e=>{const b=e.target.closest("[data-p]"); if(!b)return;
+  state.t=PERIODS.find(x=>x.id===b.dataset.p).from; $("t").value=state.t; apply();};
+
+/* ==================================================================== *
+ *  Simularea de surse: v2 spune că niciun rând nu stă pe mai mult de o
+ *  sursă independentă. O propoziție se uită; un buton care scoate
+ *  singura sursă și face asiza să dispară, nu.
+ * ==================================================================== */
+function renderSrcSim(){
+  const pid=curPort(), pl=PLACES.find(p=>p.id===pid);
+  $("srcsim").innerHTML=`<div class="note" style="margin:0 0 4px"><b>${pl.name}</b></div>`+
+    DIMS.slice().reverse().map(d=>{const n=srcOf(pid,d);
+      return `<div class="srcrow"><span class="nm" title="${d.n}">${d.n}</span>`+
+        `<button data-sd="${pid}|${d.id}" data-dx="-1">–</button>`+
+        `<span class="n ${n===0?"zero":n>=CORROB?"cor":""}">${n}</span>`+
+        `<button data-sd="${pid}|${d.id}" data-dx="1">+</button></div>`;}).join("");
+}
+$("srcsim").onclick=e=>{
+  const b=e.target.closest("[data-sd]"); if(!b) return;
+  const [pid,did]=b.dataset.sd.split("|"), d=DIMS.find(x=>x.id===did);
+  const cur=srcOf(pid,d);
+  state.src[b.dataset.sd]=Math.max(0,Math.min(3,cur+(+b.dataset.dx)));
+  $("stressout").textContent=""; apply();
+};
+$("resetsrc").onclick=()=>{state.src={}; $("stressout").textContent=""; apply();};
+
+/* Testul de rezistență rulează chiar afirmația lui v2: „profilul mixt
+   supraviețuiește scoaterii oricărui rând". Scoatem pe rând fiecare
+   sursă și verificăm dacă fiecare port mai păstrează și coerciție, și
+   ceva necoercitiv. */
+$("stress").onclick=()=>{
+  const ports=PLACES.filter(p=>p.coded);
+  const rows=[];
+  ports.forEach(p=>DIMS.forEach(d=>{ if(baseSrc(p.id,d)>0) rows.push([p.id,d]); }));
+  const mixedHolds=omit=>ports.every(p=>{
+    const live=DIMS.filter(d=>{
+      const k=p.id+"|"+d.id;
+      return (omit===k?0:baseSrc(p.id,d))>0 && EV[stFor(p.id,d)].rank>=1;
+    });
+    return live.some(d=>d.id==="COERCION") &&
+           live.some(d=>d.id!=="COERCION"&&EV[stFor(p.id,d)].rank>=2);
+  });
+  const broken=rows.filter(([pid,d])=>!mixedHolds(pid+"|"+d.id));
+  $("stressout").innerHTML=broken.length
+    ? `<b>${broken.length} din ${rows.length}</b> rânduri, scoase singure, prăbușesc `+
+      `profilul mixt: `+broken.map(([pid,d])=>
+        `${PLACES.find(p=>p.id===pid).name} / ${d.n.toLowerCase()}`).join("; ")+`.`
+    : `Profilul mixt rezistă la scoaterea oricărui rând în parte `+
+      `(${rows.length} testate) — exact ce susține v2. Dar fiecare rând stă pe o `+
+      `singură sursă, deci rezistența e la pierderea unui <i>rând</i>, nu a unei surse.`;
+};
+
+/* ==================================================================== *
+ *  Panoul ca suprafață de comandă.
+ *
+ *  Fiecare rând care numește o dimensiune o aprinde pe hartă la hover și
+ *  o selectează la clic; fiecare rând de anexare duce timpul și camera
+ *  acolo. Un tablou de bord care doar afișează cifre te lasă să te uiți
+ *  la el; acesta te trimite înapoi la obiect.
+ * ==================================================================== */
+const curPort=()=>PLACES.some(p=>p.id===state.sel.id&&p.coded)?state.sel.id:"alba";
+/* cele cinci dimensiuni conciliante — cele pe care termenul le numește */
+const CONC_IDS=["SECURITY","LEGAL","FISCAL","INCLUSION","RELIGIOUS"];
+
+function renderPorts(){
+  $("ports").innerHTML=PLACES.filter(p=>p.coded).map(p=>
+    `<button class="chip${curPort()===p.id?" on":""}" data-port="${p.id}">${p.name}</button>`
+  ).join("")+`<button class="chip" data-fit="1" title="încadrează tot">tot</button>`;
+}
+$("ports").onclick=e=>{
+  const b=e.target.closest("[data-port],[data-fit]"); if(!b) return;
+  if(b.dataset.fit){ focusOn(29.6,46.1); cam.r=440; }
+  else{ const p=PLACES.find(x=>x.id===b.dataset.port);
+        state.sel={kind:"place",id:p.id}; focusOn(p.lon,p.lat); cam.r=300;
+        addSel(px(p.lon),pz(p.lat)); }
+  apply(); pingTab("detail");
+};
+
+/* hover și clic pe orice rând care poartă o dimensiune, oriunde în panou */
+function wirePanel(el){
+  el.onmouseover=e=>{
+    const r=e.target.closest("[data-dim]"); if(!r) return;
+    state.hover={id:curPort(),dim:r.dataset.dim};
+    el.querySelectorAll("[data-dim]").forEach(x=>
+      x.classList.toggle("on",x===r)); draw();
+  };
+  el.onmouseleave=()=>{state.hover=null;
+    el.querySelectorAll("[data-dim].on").forEach(x=>x.classList.remove("on")); draw();};
+  el.onclick=e=>{
+    const g=e.target.closest("[data-goto]");
+    if(g){ const a=ANNEX.find(x=>x.id===g.dataset.goto);
+           state.t=a.from; $("t").value=state.t;
+           if(a.places&&a.places[0]){const p=PLACES.find(x=>x.id===a.places[0]);
+             if(p){focusOn(p.lon,p.lat); cam.r=320;}}
+           apply(); pingTab("policy"); return; }
+    const c=e.target.closest("[data-only]");
+    if(c){ const pid=curPort();
+      const keep=c.dataset.only==="strong"
+        ? DIMS.filter(d=>EV[stFor(pid,d)].rank>=2&&srcOf(pid,d)>0)
+        : DIMS.filter(d=>CONC_IDS.includes(d.id)&&EV[stFor(pid,d)].rank>=2);
+      const all=keep.length===state.dims.size&&keep.every(d=>state.dims.has(d.id));
+      state.dims=all?new Set(DIMS.map(d=>d.id)):new Set(keep.map(d=>d.id));
+      apply(); return; }
+    const r=e.target.closest("[data-dim]"); if(!r) return;
+    state.sel={kind:"col",id:curPort(),dim:r.dataset.dim}; apply();
+  };
+}
+["policy","effect","annex","detail"].forEach(id=>wirePanel($(id)));
+
+/* Un singur ascultător pentru toate explicațiile: orice element cu
+   data-ex o deschide, același element o închide. Clicul pe o celulă de
+   scut face amândouă — selectează dimensiunea și o explică. */
+$("panes").addEventListener("click",e=>{
+  const t=e.target.closest("[data-ex]"); if(!t) return;
+  const k=t.dataset.ex;
+  state.explain=(k==="" || state.explain===k)?null:k;
+  apply();
+},true);
+
+
+/* ==================================================================== *
+ *  File.
+ *
+ *  `state.tab` spune care panou e vizibil. Când altceva schimbă selecția
+ *  — un clic pe cetate, un rând din altă filă — fila Detaliu nu se
+ *  deschide singură, fiindcă ar muta ecranul de sub mâna omului; în
+ *  schimb clipește o dată, ca să se vadă că acolo s-a schimbat ceva.
+ * ==================================================================== */
+const TABS=[["policy",()=>tr("Politica","Policy")],
+            ["effect",()=>tr("Efectul","Effect")],
+            ["annex", ()=>tr("Anexări","Annex.")],
+            ["istim", ()=>tr("Istimâlet","Istimâlet")],
+            ["detail",()=>tr("Detaliu","Detail")]];
+
+function buildTabs(){
+  $("tabs").innerHTML=TABS.map(([id,lab])=>
+    `<button data-tab="${id}" role="tab" aria-selected="${state.tab===id}"`+
+    ` title="${lab()}">${lab()}</button>`).join("");
+}
+function showTab(id,{flash=true}={}){
+  state.tab=id;
+  TABS.forEach(([t])=>{
+    const pane=$(t), btn=$("tabs").querySelector(`[data-tab="${t}"]`);
+    const on=t===id;
+    if(btn){ btn.classList.toggle("on",on); btn.setAttribute("aria-selected",on); }
+    if(!pane) return;
+    if(on && flash){ pane.classList.remove("on"); void pane.offsetWidth; }
+    pane.classList.toggle("on",on);
+  });
+}
+$("tabs").onclick=e=>{const b=e.target.closest("[data-tab]"); if(b) showTab(b.dataset.tab);};
+/* o filă ascunsă al cărei conținut s-a schimbat clipește o dată */
+function pingTab(id){
+  if(state.tab===id) return;
+  const b=$("tabs").querySelector(`[data-tab="${id}"]`); if(!b) return;
+  b.classList.remove("ping"); void b.offsetWidth; b.classList.add("ping");
+}
+
+/* ==================================================================== *
+ *  Politica, desenată: o bandă pe teritoriu, statutul juridic în timp.
+ *
+ *  Este forma pe care un istoric o citește fără instrucțiuni — aceeași
+ *  cu o diagramă de domnii sau cu acoperirea unui fond. Argumentul se
+ *  vede direct: în timpul domniei lui Bayezid, două rânduri trec la roșu
+ *  (stăpânire directă) în timp ce restul rămân ocru (tributare). Alegerea
+ *  între cele două instrumente este politica, și aici se vede ca formă.
+ * ==================================================================== */
+const STATUS_ROWS=[
+ {id:"mold", ro:"Moldova", en:"Moldavia", seg:[[1450,1455,"free"],[1455,1457,"trib"],
+   [1457,1485,"war"],[1485,1600,"trib"]]},
+ {id:"wal", ro:"Țara Românească", en:"Wallachia", seg:[[1450,1600,"trib"]]},
+ {id:"chilia", ro:"Chilia", en:"Kili", seg:[[1450,1484,"free"],[1484,1600,"annex"]]},
+ {id:"alba", ro:"Cetatea Albă", en:"Akkerman", seg:[[1450,1484,"free"],[1484,1600,"annex"]]},
+ {id:"tighina", ro:"Tighina", en:"Bender", seg:[[1450,1538,"free"],[1538,1600,"annex"]]},
+ {id:"braila", ro:"Brăila", en:"Brăila", seg:[[1450,1540,"free"],[1540,1600,"annex"]]}
+];
+const ST_FILL={free:"rgba(117,112,95,.18)", war:"rgba(117,112,95,.34)",
+               trib:"rgba(156,107,40,.55)", annex:"#a8452f"};
+
+/* ==================================================================== *
+ *  Explicațiile graficelor.
+ *
+ *  Proza nu dispare, își schimbă locul: graficul poartă forma, clicul
+ *  poartă explicația. Așa panoul rămâne o figură, iar textul apare numai
+ *  pentru elementul despre care s-a întrebat.
+ * ==================================================================== */
+const EXPLAIN={
+ "strip:reign":()=>[tr("Domnia lui Bayezid II, 1481–1512","Bayezid II's reign, 1481–1512"),
+   tr("A guvernat Amasya ca șehzade înainte de urcarea pe tron. Articolul-pereche susține "+
+      "că stilul instituțional s-a format acolo, iar frontiera dunăreană l-a pus la încercare: "+
+      "Amasya a făcut conducătorul, Valahia l-a testat.",
+      "He governed Amasya as şehzade before his accession. The companion article argues the "+
+      "institutional style formed there and the Danube frontier tested it: Amasya made the "+
+      "ruler, Wallachia tested him.")],
+ "strip:mold:trib":()=>[tr("Moldova, tributară","Moldavia, tributary"),
+   tr("Petru Aron acceptă suzeranitatea în 1455 și consimte la haraci — cu 29 de ani înainte "+
+      "de cucerirea porturilor. După omagiul de la Colomeea, septembrie 1485, tributul se "+
+      "reia și ține până la capătul ferestrei. Țara plătește, dar nu este încorporată.",
+      "Petru Aron accepts overlordship in 1455 and consents to tribute — 29 years before the "+
+      "ports fall. After the homage at Kolomyia in September 1485 tribute resumes and holds "+
+      "to the end of the window. The country pays, but is not incorporated.")],
+ "strip:mold:war":()=>[tr("Moldova, tribut întrerupt","Moldavia, tribute lapsed"),
+   tr("Domnia lui Ștefan: tributul este oprit, iar în 1475–1476 se ajunge la război deschis. "+
+      "Nu este independență în sens modern, ci o relație tributară suspendată — motiv pentru "+
+      "care banda e desenată mai închis, nu ca perioadele libere.",
+      "Stephen's reign: tribute is withheld and 1475–1476 brings open war. This is not "+
+      "independence in the modern sense but a suspended tributary relation — which is why the "+
+      "band is drawn darker than the free periods.")],
+ "strip:wal:trib":()=>[tr("Țara Românească, tributară","Wallachia, tributary"),
+   tr("Plătește pe tot intervalul hărții. Exact statutul intermediar pe care îl descrie "+
+      "Panaite (2019): nici provincie încorporată, nici stat egal. Niciun teritoriu tributar "+
+      "nu trece vreodată la roșu — istimâletul, dacă s-a aplicat, nu s-a aplicat aici.",
+      "Pays throughout the window. Precisely the intermediate status Panaite (2019) describes: "+
+      "neither incorporated province nor equal state. No tributary band ever turns red — "+
+      "istimâlet, if it applied, did not apply here.")],
+ "strip:annex":()=>[tr("Luat în administrare directă","Taken into direct administration"),
+   tr("Teritoriul intră în structura otomană ca sangeac: cadiu numit, registre, vamă. Este "+
+      "singurul fel de pământ pe care întrebarea despre istimâlet are obiect — restul hărții "+
+      "rămâne tributar, iar acolo întrebarea nici nu se pune.",
+      "The territory enters the Ottoman structure as a sancak: kadı appointed, registers, "+
+      "customs. This is the only kind of ground on which the istimâlet question has an object — "+
+      "the rest of the map stays tributary, where the question does not arise.")],
+ "strip:free":()=>[tr("Înainte de cucerire","Before the conquest"),
+   tr("Sub stăpânire moldovenească sau muntenească, fără obligație otomană consemnată în "+
+      "acest set. Pe harta principală, aceleași locuri apar cu pion închis la culoare.",
+      "Under Moldavian or Wallachian rule, with no Ottoman obligation recorded in this "+
+      "dataset. On the main map the same places show a dark marker.")],
+ "strip:summary":()=>[tr("Două instrumente pe aceeași frontieră","Two instruments, one frontier"),
+   tr("La luna curentă, atâtea teritorii sunt luate în administrare directă și atâtea țări "+
+      "rămân tributare. Alegerea dintre cele două este politica lui Bayezid — nu intensitatea "+
+      "cu care a fost aplicat unul dintre ele. Benzile ocru nu trec niciodată la roșu.",
+      "At this month, that many territories are under direct administration and that many "+
+      "countries remain tributary. The choice between the two is Bayezid's policy — not how "+
+      "hard either was applied. The ochre bands never turn red.")],
+ "cov:summary":()=>[tr("Ce s-ar putea măsura","What could be measured"),
+   tr("Din opt dimensiuni, atâtea au un registru în corpus și atâtea ating intervalul "+
+      "1484–1491. Teftiş-urile încep fix în 1491, adică exact când fereastra se închide: "+
+      "singura serie locală și administrativă pentru cele două porturi pornește de unde ar "+
+      "fi trebuit să se termine. Iar singura care chiar acoperă intervalul este cronica — "+
+      "care consemnează asedii, nu dări și nu judecăți.",
+      "Of eight dimensions, that many have a register in the corpus and that many reach the "+
+      "1484–1491 interval. The teftiş registers begin in exactly 1491, the year the window "+
+      "closes: the only local administrative series for these two ports starts where it "+
+      "should have ended. And the one series that does cover the interval is the chronicle "+
+      "tradition — which records sieges, not taxes and not court cases.")],
+ "v2:open":()=>[tr("Rămase deschise în v2","Left open in v2"),
+   tr("Trei puncte din lista de blocaje a studiului ating cifre desenate aici: proveniența "+
+      "rândului Kili apărut între Tabelele 2 și 6; sursa Engin (2025), citată în Figura 3 dar "+
+      "absentă din bibliografie; și data 1491, care poartă în text marcajul de verificare.",
+      "Three items from the study's own blocking list touch figures drawn here: the "+
+      "provenance of the Kili row that appears between Tables 2 and 6; the Engin (2025) "+
+      "source, cited in Figure 3 but absent from the bibliography; and the 1491 date, which "+
+      "carries a verification flag in the text.")],
+ "pol:gradient":()=>[tr("Stăpânirea nu era binară","Rule was not binary"),
+   tr("Ünal arată că între sangeacul clasic și principatul tributar exista o a treia formă: "+
+      "sangeacul privilegiat — <i>yurtluk-ocaklık</i> și <i>hükümet</i> — în care dinastiile "+
+      "locale rămâneau pe pământul lor, cu prerogative ereditare, <b>în interiorul</b> "+
+      "imperiului. Când guvernatorii au încercat să desființeze aceste privilegii, Divanul "+
+      "a refuzat.<br><br>Pentru harta aceasta contează direct: Kili și Akkerman au primit "+
+      "forma cea mai directă — sangeac clasic, cadiu numit, registre — deși exista și o "+
+      "variantă mai blândă, deja folosită în altă parte a imperiului. Alegerea celei dure "+
+      "pentru două porturi comerciale, în timp ce țara rămânea tributară, este o decizie, "+
+      "nu o consecință automată a cuceririi.",
+      "Ünal shows a third form between the classical sancak and the tributary principality: "+
+      "the privileged sancak — <i>yurtluk-ocaklık</i> and <i>hükümet</i> — where local "+
+      "dynasties stayed on their land with hereditary prerogatives, <b>inside</b> the "+
+      "empire. When governors tried to abolish those privileges, the Divan refused."+
+      "<br><br>This bears directly on the map: Kili and Akkerman got the most direct form — "+
+      "classical sancak, appointed kadı, registers — although a gentler option existed and "+
+      "was already in use elsewhere in the empire. Choosing the hard form for two commercial "+
+      "ports while the country stayed tributary is a decision, not an automatic consequence "+
+      "of conquest.")],
+ "pol:gap":()=>[tr("Ce fel de surse sunt acestea","What kind of sources these are"),
+   tr("Fiecare arie are două locuri de umplut, fiindcă o afirmație sprijinită pe o singură "+
+      "autoritate nu este coroborată: dacă acea autoritate se înșală, afirmația cade cu ea. "+
+      "Niciun rând nu are amândouă locurile pline, la niciun port.<br><br>"+
+      "Dar întrebarea mai importantă este <b>ce fel</b> de sursă stă în locul plin. "+
+      "<b class='kizvor'>◆</b> înseamnă izvor de epocă — un document din secolul al XV-lea. "+
+      "<b class='kstudiu'>●</b> înseamnă studiu modern — un istoric de azi care raportează "+
+      "ce a citit el în arhivă. Nu sunt același lucru, iar v2 o spune limpede: corpusul "+
+      "este literatură secundară, nu documente de arhivă.<br><br>"+
+      "La Chilia, <b>niciuna</b> dintre cele cinci surse nu este un document de epocă — "+
+      "toate sunt articole moderne. La Cetatea Albă există un singur izvor, Aşıkpaşazâde, "+
+      "și tocmai acela contrazice lectura de acomodare.",
+      "Each area has two places to fill, because a claim resting on a single authority is "+
+      "not corroborated: if that authority is wrong, the claim falls with it. No row has "+
+      "both places filled, at either port.<br><br>"+
+      "But the more important question is <b>what kind</b> of source sits in a filled "+
+      "place. <b class='kizvor'>◆</b> means a period source — a fifteenth-century "+
+      "document. <b class='kstudiu'>●</b> means a modern study — a present-day historian "+
+      "reporting what they read in an archive. These are not the same thing, and v2 says "+
+      "so plainly: the corpus is secondary literature, not archival documents.<br><br>"+
+      "At Chilia, <b>not one</b> of the five sources is a period document — all are modern "+
+      "articles. At Cetatea Albă there is exactly one period source, Aşıkpaşazâde, and it "+
+      "is the one that contradicts the accommodation reading.")],
+ "pol:read":()=>[tr("Ce arată și ce nu arată","What this does and does not show"),
+   tr("Reversibilitatea este o variabilă politică aflată chiar în date și se poate număra: "+
+      "statutul tributar se pierde și se reia — Moldova trece prin trei schimbări între 1450 "+
+      "și 1600 — pe când nicio anexare nu se întoarce în toată fereastra. Un instrument este "+
+      "revocabil, celălalt nu, iar asta se vede fără nicio presupunere despre intenții.<br><br>"+
+      "Ce <b>nu</b> arată: de ce au fost alese. Corpusul nu conține socotelile Porții — "+
+      "costul unei garnizoane față de un haraci, calculul strategic al închiderii Mării Negre. "+
+      "Chokepoint-urile de mai sus sunt geografie verificabilă pe hartă, nu motive atribuite. "+
+      "O analiză politică a perioadei poate porni de aici, dar trebuie să-și aducă propriile "+
+      "izvoare: registre de cheltuieli, ahdname-uri, corespondență diplomatică.",
+      "Reversibility is a political variable that sits in the data itself and can be counted: "+
+      "tributary status lapses and resumes — Moldavia passes through three changes between "+
+      "1450 and 1600 — while no annexation is ever reversed in the whole window. One "+
+      "instrument is revocable, the other is not, and that is visible without assuming "+
+      "anything about intent.<br><br>"+
+      "What it does <b>not</b> show: why they were chosen. The corpus holds none of the "+
+      "Porte's reckoning — the cost of a garrison against a tribute, the strategic calculus "+
+      "of closing the Black Sea. The chokepoints above are geography checkable on the map, "+
+      "not attributed motives. A political analysis of the period can start here, but must "+
+      "bring its own sources: expenditure registers, ahdnames, diplomatic correspondence.")],
+ "prop:terr":()=>[tr("Teritorii codificate","Territories coded"),
+   tr("Câte dintre teritoriile anexate până la luna curentă au vreo codare istimâlet. "+
+      "Numărătorul se oprește în 1484; numitorul crește la 1538 și de două ori în 1595. "+
+      "Bara scade pe măsură ce stăpânirea se întinde.",
+      "How many of the territories annexed by this month carry any istimâlet coding. The "+
+      "numerator stops in 1484; the denominator grows in 1538 and twice in 1595. The bar "+
+      "falls as rule expands.")],
+ "prop:forts":()=>[tr("Cetăți codificate","Fortresses coded"),
+   tr("Doar Kili și Akkerman sunt codificate. Bender (1538) și Brăila (1540) intră în "+
+      "stăpânire otomană fără ca modelul să le atingă vreodată.",
+      "Only Kili and Akkerman are coded. Bender (1538) and Brăila (1540) come under Ottoman "+
+      "rule without the model ever touching them.")],
+ "prop:upkeep":()=>[tr("Întreținute de Moldova","Moldavian upkeep"),
+   tr("Cetăți construite, reparate și întreținute cu contribuția Țării Moldovei — și pierdute. "+
+      "Pe hartă poartă inelul arămiu. Cetățile pe care Moldova le-a plătit sunt exact cele "+
+      "care îi sunt luate.",
+      "Fortresses built, repaired and maintained with Moldavian contribution — and lost. On "+
+      "the map they carry the copper ring. The fortresses Moldavia paid for are exactly the "+
+      "ones taken from it.")]
+};
+function explainFor(key){
+  if(!key) return null;
+  if(EXPLAIN[key]) return EXPLAIN[key]();
+  if(key.startsWith("claim:")){ return null; }   /* randat în linie, nu în casetă */
+  if(key.startsWith("dim:")){
+    const d=DIMS.find(x=>x.id===key.slice(4)); if(!d) return null;
+    const pid=curPort(), st=EV[stFor(pid,d)], n=srcOf(pid,d);
+    return [d.n+" — "+st.lab,
+      tr(`Literatura care definește dimensiunea: ${d.lit}. La ${PLACES.find(p=>p.id===pid).name} `+
+         `stă pe ${n} ${n===1?"sursă":"surse"}. Definiția vine din literatura generală; `+
+         `statutul de aici vine din ce se poate arăta local, iar cele două nu coincid.`,
+         `Literature defining the dimension: ${d.lit}. At ${PLACES.find(p=>p.id===pid).name} `+
+         `it rests on ${n} source${n===1?"":"s"}. The definition comes from the general `+
+         `literature; the status here comes from what can be shown locally, and the two do `+
+         `not coincide.`)];
+  }
+  if(key.startsWith("cov:")){
+    const d=DIMS.find(x=>x.id===key.slice(4)); if(!d) return null;
+    const e=EFFECT[d.id], has=e.from!==null;
+    return [d.n+" — "+(has?tr("registru existent","register present"):tr("fără registru","no register")),
+      tr(`Efectul s-ar vedea ca: ${e.m}. Registrul care l-ar măsura: ${e.regl}. `+
+         (has?`Seria acoperă ${e.from}–${e.to}.`:`Nu există în acest corpus.`)+
+         ` Modelul codifică ce raportează literatura că s-a făcut, nu ce s-a întâmplat după.`,
+         `The effect would show as: ${e.m}. The register that would measure it: ${e.regl}. `+
+         (has?`The series runs ${e.from}–${e.to}.`:`It is absent from this corpus.`)+
+         ` The model codes what the literature reports was done, not what happened after.`)];
+  }
+  return null;
+}
+/* Un panou poate găzdui mai multe familii de chei: panoul Detaliu are și
+   celulele scutului („dim:"), și semnul punctelor deschise („v2:"). Dacă
+   domeniul ar fi un singur prefix, al doilea clic n-ar afișa nimic. */
+function explainBox(...scopes){
+  const k=state.explain;
+  if(!k || !scopes.some(sc=>k.startsWith(sc))) return "";
+  const r=explainFor(k); if(!r) return "";
+  return `<div class="exbox"><button class="exclose" data-ex="">×</button>`+
+         `<b>${r[0]}</b><p>${r[1]}</p></div>`;
+}
+
+/* ==================================================================== *
+ *  Roata istimâletului și barele pereche — cele două grafice din poster.
+ *
+ *  Pe poster, roata arată cele opt arii de guvernare în jurul conceptului,
+ *  iar barele pun Kili lângă Akkerman. Aici câștigă ceva ce afișul nu
+ *  poate: culoarea fiecărui nod vine din starea dovezii la portul ales,
+ *  deci roata se schimbă când schimbi portul, iar un nod gol înseamnă
+ *  că aria e numită de literatură dar nu e susținută local.
+ * ==================================================================== */
+/* ==================================================================== *
+ *  Care sursă, și de ce fel.
+ *
+ *  „O sursă" nu spune nimic unui istoric: prima întrebare este care
+ *  anume și din ce categorie. Distincția care contează aici este între
+ *  IZVOR — document din epocă — și STUDIU — lucrare modernă. v2 o spune
+ *  răspicat: corpusul este literatură secundară, nu documente de arhivă.
+ *  Ascunzând asta în spatele cuvântului „sursă", tabla sugera documente
+ *  acolo unde sunt articole.
+ * ==================================================================== */
+const SRC_AT={
+ chilia:{COERCION:["Beldiceanu 1964","studiu"],
+         ADMIN:["Beldiceanu 1968","studiu"],
+         ECONOMIC:["Papacostea 1977","studiu"],
+         LEGAL:["Plamadeala 2026, Tab. 5","studiu"],
+         FISCAL:["Plamadeala 2026, Tab. 5","studiu"]},
+ alba:{COERCION:["Beldiceanu 1964","studiu"],
+       ADMIN:["Beldiceanu 1968","studiu"],
+       ECONOMIC:["Papacostea 1977","studiu"],
+       FISCAL:["Plamadeala 2026, Tab. 5","studiu"],
+       RELIGIOUS:["Aşıkpaşazâde","izvor"]}
+};
+const srcAt=(pid,d)=>(SRC_AT[pid]||{})[d.id]||null;
+const KIND=k=>k==="izvor"
+  ? {gl:"◆", ro:"izvor de epocă", en:"period source"}
+  : {gl:"●", ro:"studiu modern",  en:"modern study"};
+
+const HUB_ICON={COERCION:"⚔", ADMIN:"⌂", ECONOMIC:"⚖", SECURITY:"🛡",
+                LEGAL:"§", FISCAL:"◈", INCLUSION:"⚇", RELIGIOUS:"☾"};
+
+/* ==================================================================== *
+ *  Lectura politică.
+ *
+ *  O analiză politică a frontierei din 1484 ar vrea să știe de ce au fost
+ *  alese instrumentele alese. Despre motive, corpusul nu spune nimic, și
+ *  nu le inventez. Dar o variabilă politică chiar se află în date și e
+ *  calculabilă: REVERSIBILITATEA. Statutul tributar se pierde și se reia
+ *  — Moldova trece prin trei schimbări — pe când anexarea nu se întoarce
+ *  niciodată în această fereastră. Asta nu e interpretare, e numărătoare.
+ *
+ *  Ce ține de interpretare — ce controlează fiecare instrument, cât costă
+ *  — stă separat și marcat ca atare.
+ * ==================================================================== */
+function flipsOf(row){                 /* câte schimbări de statut are o bandă */
+  let n=0; for(let i=1;i<row.seg.length;i++) if(row.seg[i][2]!==row.seg[i-1][2]) n++;
+  return n;
+}
+/* Ce închide fiecare anexare. Geografie, verificabilă pe hartă — nu motiv. */
+const CHOKE={
+  chilia: {ro:"gura Dunării",        en:"the Danube mouth"},
+  alba:   {ro:"limanul Nistrului",   en:"the Dniester liman"},
+  tighina:{ro:"vadul Nistrului",     en:"the Dniester crossing"},
+  braila: {ro:"portul muntenesc al Dunării", en:"Wallachia's Danube port"}
+};
+
+function politicsBlock(){
+  const t=state.t;
+  const rows=STATUS_ROWS.map(r=>({r, f:flipsOf(r),
+    annexed:r.seg.some(x=>x[2]==="annex"), trib:r.seg.some(x=>x[2]==="trib")}));
+  const tribRows=rows.filter(x=>x.trib&&!x.annexed), annRows=rows.filter(x=>x.annexed);
+  const tribFlips=tribRows.reduce((a,x)=>a+x.f,0);
+  /* o anexare nu se mai întoarce: zero reveniri în toată fereastra */
+  const annReturns=annRows.reduce((a,x)=>a+
+    x.r.seg.filter((sg,i)=>i>0&&x.r.seg[i-1][2]==="annex"&&sg[2]!=="annex").length,0);
+
+  /* Ünal arată că stăpânirea otomană nu era binară. Între sangeacul
+     clasic și principatul tributar stătea sangeacul privilegiat —
+     yurtluk-ocaklık și hükümet — unde dinastiile locale își păstrau
+     pământul și prerogativele în interiorul imperiului, iar Divanul
+     respingea încercările de a le desființa. Porturile au primit forma
+     cea mai directă, deși exista și una mai blândă. */
+  let h=`<div class="instr">`+
+    `<div class="icol"><div class="ih">${tr("Anexare","Annexation")}</div>`+
+      `<div class="ibig">${annReturns}</div>`+
+      `<div class="ism">${tr("reveniri în 150 de ani","reversals in 150 years")}</div></div>`+
+    `<div class="icol"><div class="ih">${tr("Tribut","Tribute")}</div>`+
+      `<div class="ibig">${tribFlips}</div>`+
+      `<div class="ism">${tr("schimbări de statut","status changes")}</div></div>`+
+  `</div>`;
+  h+=`<div class="gradient" data-ex="pol:gradient">`+
+     [[tr("sangeac clasic","classical sancak"),tr("Kili, Akkerman","Kili, Akkerman"),"#a8452f"],
+      [tr("sangeac privilegiat","privileged sancak"),tr("neutilizat aici","not used here"),"#9C6B28"],
+      [tr("principat tributar","tributary principality"),tr("Moldova, Ț. Rom.","Moldavia, Wallachia"),
+       "rgba(156,107,40,.4)"]].map(([a,b,c])=>
+      `<div class="grow"><i style="background:${c}"></i><b>${a}</b><span>${b}</span></div>`
+     ).join("")+`<em>?</em></div>`;
+
+  /* ce a închis fiecare anexare, la luna curentă — geografie, nu motiv */
+  const closed=PLACES.filter(p=>p.ott!==null&&t>=p.ott&&CHOKE[p.id]);
+  if(closed.length)
+    h+=`<div class="choke">`+closed.map(p=>
+      `<div class="crow2"><b>${p.name}</b><span>${tr(CHOKE[p.id].ro,CHOKE[p.id].en)}</span>`+
+      `</div>`).join("")+`</div>`;
+
+  h+=`<div class="scoreline" data-ex="pol:read"><span>${
+      tr("citire politică","political reading")}</span><em>?</em></div>`;
+  return h;
+}
+
+function renderIstim(){
+  const pid=curPort(), pl=PLACES.find(p=>p.id===pid);
+  const R=74, cx=110, cy=108, nr=19;
+  let h=`<svg class="hub" viewBox="0 0 220 220" role="img">`;
+  DIMS.forEach((d,i)=>{
+    const a=(i/DIMS.length)*Math.PI*2 - Math.PI/2;
+    const x=cx+Math.cos(a)*R, y=cy+Math.sin(a)*R;
+    const k=stFor(pid,d), st=EV[k], n=srcOf(pid,d), dead=n<=0;
+    const on=state.explain===`dim:${d.id}`||state.sel.dim===d.id;
+    h+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${
+        dead?"rgba(117,112,95,.35)":st.c}" stroke-width="${dead?1:2.2}"${
+        dead?' stroke-dasharray="2 3"':''}/>`;
+    h+=`<g class="hn" data-ex="dim:${d.id}">`+
+       `<circle cx="${x}" cy="${y}" r="${nr}" fill="${dead?"none":st.c}" `+
+       `stroke="${st.c}" stroke-width="${on?3:1.6}"${dead?' stroke-dasharray="3 2"':''}/>`+
+       `<text x="${x}" y="${y+5}" text-anchor="middle" font-size="15" `+
+       `fill="${dead?st.c:"#F3F1EA"}">${HUB_ICON[d.id]}</text>`+
+       `<title>${d.n} — ${st.lab}</title></g>`;
+  });
+  h+=`<circle cx="${cx}" cy="${cy}" r="30" fill="#1B1915"/>`+
+     `<text x="${cx}" y="${cy-1}" text-anchor="middle" font-size="11" fill="#F3F1EA" `+
+     `font-style="italic">istimâlet</text>`+
+     `<text x="${cx}" y="${cy+11}" text-anchor="middle" font-size="8.5" `+
+     `fill="rgba(243,241,234,.65)">${pl.name}</text></svg>`;
+
+  /* etichetele în HTML, în jurul roții, ca să rămână traduse și lizibile */
+  h+=`<div class="hublab">`+DIMS.map(d=>{
+       const st=EV[stFor(pid,d)], dead=srcOf(pid,d)<=0;
+       return `<span data-ex="dim:${d.id}"><i style="background:${
+         dead?"transparent":st.c};border-color:${st.c}"></i>${d.n}</span>`;}).join("")+`</div>`;
+
+  /* barele pereche: aceeași formă ca pe poster, Kili lângă Akkerman */
+  const ports=PLACES.filter(p=>p.coded);
+  h+=`<div class="pairhead">${tr("Statutul dovezilor, pe port","Evidentiary status, by port")}</div>`;
+  h+=`<div class="pairs">`+ports.map(p=>{
+       const bars=DIMS.map(d=>{const k=stFor(p.id,d), st=EV[k];
+         const hgt=Math.round([6,6,34,46,62][["problematic","untested","contextual",
+           "documented","direct"].indexOf(k)]||6);
+         const hollow=k==="problematic"||srcOf(p.id,d)<=0;
+         return `<i data-ex="dim:${d.id}" title="${d.n} — ${st.lab}" style="height:${hgt}px;`+
+                `background:${hollow?"transparent":st.c};border:1.5px solid ${st.c}"></i>`;}).join("");
+       return `<div class="pcol"><div class="pbars">${bars}</div>`+
+              `<div class="pname">${p.name}</div></div>`;}).join("")+`</div>`;
+
+  /* ------------------------------------------------------------------ *
+   *  Tabla surselor.
+   *
+   *  Prima versiune era un grafic de arie, copiat după formă de pe poster.
+   *  Era greșit: axa X nu e o scară, ci opt categorii, iar o linie care le
+   *  unește sugerează o pantă care nu există — panta venea din ordinea în
+   *  care le sortasem eu, nu din date.
+   *
+   *  Forma potrivită pentru „câte surse are fiecare, din câte ar trebui"
+   *  este o tablă de răboj: un rând pe arie, două locuri de umplut.
+   *  Plin = sursă existentă. Gol = sursă lipsă. Nu e nevoie de axe, de
+   *  prag explicat, nici de deprindere statistică — se numără cu ochiul.
+   * ------------------------------------------------------------------ */
+  const ord=DIMS.slice().sort((x,y)=>srcOf(pid,y)-srcOf(pid,x)
+            || EV[stFor(pid,y)].rank-EV[stFor(pid,x)].rank);
+  let g=`<div class="gaphead">${tr("Câte surse are fiecare arie",
+                                   "How many sources each area has")}</div>`;
+  g+=`<div class="tally">`+ord.map(d=>{
+    const n=srcOf(pid,d), st=EV[stFor(pid,d)], contra=stFor(pid,d)==="problematic";
+    const sa=srcAt(pid,d), K=sa?KIND(sa[1]):null;
+    const slots=[0,1].map(i=>i<n
+      ? `<i class="full" style="background:${st.c};border-color:${st.c}"></i>`
+      : `<i class="empty"></i>`).join("");
+    /* două rânduri: aria sus, sursa dedesubt — altfel numele sursei se
+       taie, iar tocmai numele era întrebarea */
+    return `<div class="trow" data-ex="dim:${d.id}">`+
+      `<span class="ts">${slots}</span>`+
+      `<span class="tb"><span class="tn">${d.n}</span>`+
+      `<span class="tm">`+(sa
+        ? `<b class="k${sa[1]}" title="${tr(K.ro,K.en)}">${K.gl}</b> ${sa[0]}`+
+          ` · ${tr(K.ro,K.en)}`+
+          (contra?` · <u>${tr("contrazice","contradicts")}</u>`:``)
+        : `<span class="none">${tr("niciun izvor, niciun studiu",
+                                   "no source, no study")}</span>`)+
+      `</span></span></div>`;}).join("")+`</div>`;
+  const none=ord.filter(d=>srcOf(pid,d)===0).length;
+  const filled=ord.filter(d=>srcOf(pid,d)>0);
+  const prim=filled.filter(d=>{const a=srcAt(pid,d); return a&&a[1]==="izvor";}).length;
+  g+=`<div class="tallyfoot">`+
+     `<span><b class="kizvor">◆</b>${tr("izvor de epocă","period source")}</span>`+
+     `<span><b class="kstudiu">●</b>${tr("studiu modern","modern study")}</span>`+
+     `<span><i class="empty"></i>${tr("loc gol = lipsă","empty = missing")}</span></div>`;
+  g+=`<div class="scoreline" data-ex="pol:gap"><b>${prim}</b><span>${
+     tr("din "+filled.length+" sunt izvoare de epocă",
+        "of "+filled.length+" are period sources")}</span><b>${none}</b><span>${
+     tr("arii fără nimic","areas with nothing")}</span><em>?</em></div>`;
+
+  $("istim").innerHTML=h+g+explainBox("dim:","pol:gap");
+}
+
+function renderPolicy(){
+  const t=state.t, yr=yearOf(t);
+  const trib=tributaryAt(t), ann=ANNEX.filter(a=>t>=a.from);
+  const X=v=>((v-1450)/150)*100;
+
+  let h=`<svg class="strip" viewBox="0 0 300 ${STATUS_ROWS.length*19}" `+
+        `preserveAspectRatio="none" role="img">`;
+  /* domnia lui Bayezid II ca bandă de fundal */
+  h+=`<rect class="ex" data-ex="strip:reign" x="${X(1481)*3}" y="0" `+
+     `width="${(X(1512)-X(1481))*3}" height="${STATUS_ROWS.length*19}" `+
+     `fill="rgba(27,25,21,.07)"><title>${tr("domnia Bayezid II","Bayezid II's reign")}`+
+     `</title></rect>`;
+  STATUS_ROWS.forEach((r,i)=>{
+    const y=i*19+2;
+    r.seg.forEach(([f,to,k])=>{
+      /* fiecare segment e o afirmație: cine, ce statut, între ce ani */
+      const ek = k==="annex" ? "strip:annex"
+               : k==="free"  ? "strip:free"
+               : `strip:${r.id}:${k}`;
+      const sel = state.explain===ek ? ' stroke="#1B1915" stroke-width="1"' : "";
+      h+=`<rect class="ex" data-ex="${ek}" x="${X(f)*3}" y="${y}" `+
+         `width="${(X(to)-X(f))*3}" height="15" fill="${ST_FILL[k]}"${sel}>`+
+         `<title>${tr(r.ro,r.en)} · ${f}–${to}</title></rect>`;
+    });
+  });
+  /* cursorul de timp */
+  h+=`<line x1="${X(yr)*3}" y1="0" x2="${X(yr)*3}" y2="${STATUS_ROWS.length*19}" `+
+     `stroke="#9E2B20" stroke-width="1.8"/>`;
+  [1500,1550].forEach(v=>h+=`<line x1="${X(v)*3}" y1="0" x2="${X(v)*3}" `+
+     `y2="${STATUS_ROWS.length*19}" stroke="rgba(27,25,21,.12)" stroke-width="1"/>`);
+  h+=`</svg>`;
+
+  /* etichetele stau în HTML, nu în SVG: rămân selectabile și se traduc */
+  h=`<div class="striprow">`+
+    `<div class="striplab">`+STATUS_ROWS.map(r=>`<span>${tr(r.ro,r.en)}</span>`).join("")+
+    `</div>`+h+`</div>`+
+    `<div class="stripax"><span>1450</span><span>${tr("domnia Bayezid II","Bayezid II's reign")}`+
+    `</span><span>1600</span></div>`+
+    `<div class="legrow">`+
+      `<i style="background:${ST_FILL.free}"></i>${tr("de sine stătător","independent")}`+
+      `<i style="background:${ST_FILL.trib}"></i>${tr("tributar","tributary")}`+
+      `<i style="background:${ST_FILL.annex}"></i>${tr("anexat","annexed")}</div>`;
+
+  h+=`<div class="scoreline" data-ex="strip:summary">`+
+       `<b>${ann.length}</b> <span>${tr("anexat","annexed")}</span>`+
+       `<b>${trib.length}</b> <span>${tr("tributar","tributary")}</span>`+
+       `<em>?</em></div>`;
+  $("policy").innerHTML=h+politicsBlock()+explainBox("strip:","pol:");
+}
+
+/* Efectul. Modelul codifică mecanisme — ce spun sursele că s-a făcut.
+   Efectul ar fi ce s-a întâmplat cu oamenii, vama, bisericile. Panoul nu
+   îl inventează; numește registrul care l-ar măsura și spune dacă există. */
+/* ==================================================================== *
+ *  Acoperirea arhivistică — nu un grafic, o diagramă de fond.
+ *
+ *  Întrebarea „se poate măsura efectul?" este, în fond, o întrebare de
+ *  acoperire: există un registru care să cuprindă perioada care ne
+ *  interesează? Asta se citește într-un instrument de cercetare din
+ *  orice arhivă — o bandă pe an, fereastra marcată, vezi dacă se suprapun.
+ *  Nu e nevoie de nicio deprindere statistică; e aceeași formă pe care un
+ *  istoric o vede la fiecare fond.
+ * ==================================================================== */
+const AX0=1450, AX1=1600;
+const axp=y=>((y-AX0)/(AX1-AX0))*100;
+
+function renderEffect(){
+  const rows=DIMS.filter(d=>state.dims.has(d.id));
+  const have=rows.filter(d=>EFFECT[d.id].from!==null);
+  /* Suprapunere propriu-zisă, nu atingere: teftiş-urile încep fix în
+     1491, adică exact acolo unde se închide fereastra. O bandă care se
+     lipește de margine nu acoperă intervalul — iar diferența asta este
+     tocmai problema. */
+  const covers=d=>{const e=EFFECT[d.id];
+    return e.from!==null && e.from<DECIDABLE[1] && e.to>DECIDABLE[0];};
+  const abuts=d=>{const e=EFFECT[d.id];
+    return e.from!==null && !covers(d) && (e.from===DECIDABLE[1]||e.to===DECIDABLE[0]);};
+  const decid=rows.filter(covers), edge=rows.filter(abuts);
+
+  const L=axp(DECIDABLE[0]), Rw=axp(DECIDABLE[1])-axp(DECIDABLE[0]);
+  let h=`<div class="cov">`+
+    `<div class="covhead"><span></span><span class="covtrack">`+
+      `<i class="win" style="left:${L}%;width:${Rw}%"></i>`+
+      `<u style="left:${axp(1484)}%"></u><u style="left:${axp(1538)}%"></u>`+
+      `<u style="left:${axp(1595)}%"></u></span></div>`+
+    rows.map(d=>{const e=EFFECT[d.id], ok=e.from!==null;
+      return `<div class="covrow" data-dim="${d.id}" data-ex="cov:${d.id}" title="${e.m}">`+
+        `<span class="covnm">${d.n}</span>`+
+        `<span class="covtrack">`+
+          `<i class="win" style="left:${L}%;width:${Rw}%"></i>`+
+          (ok?`<b style="left:${axp(e.from)}%;width:${axp(e.to)-axp(e.from)}%;`+
+               `background:${covers(d)?"var(--direct)":"var(--ochre,#9C6B28)"}"></b>`
+             :`<s></s>`)+
+        `</span>`+
+        `<span class="covyr">${ok?e.from+"–"+e.to:"—"}</span></div>`;}).join("")+
+    `<div class="covfoot"><span></span><span class="covtrack">`+
+      /* trei repere, nu patru: pe o pistă de ~160 px, „1550" și „1600"
+         se suprapuneau */
+      `<em style="left:0%">1450</em><em style="left:${axp(1500)}%">1500</em>`+
+      `<em style="right:0;left:auto">1600</em>`+
+    `</span><span></span></div></div>`;
+
+  /* Diagrama spune deja povestea. Rămân două cifre și un semn care, la
+     clic, dă fraza întreagă — în loc de un paragraf permanent. */
+  h+=`<div class="scoreline" data-ex="cov:summary">`+
+       `<b>${have.length}/${rows.length}</b> <span>${tr("au registru","have a register")}</span>`+
+       `<b>${decid.length}/${rows.length}</b> <span>${tr("acoperă 1484–1491","cover 1484–1491")}</span>`+
+       `<em>?</em></div>`;
+  $("effect").innerHTML=h+explainBox("cov:");
+}
+
+function renderAnnex(){
+  const t=state.t, done=ANNEX.filter(a=>t>=a.from);
+  const coded=done.filter(a=>a.coded).length;
+  const forts=PLACES.filter(p=>p.ott!==null&&t>=p.ott);
+  const fc=forts.filter(p=>p.coded).length, up=forts.filter(p=>p.upkeep).length;
+  let h=done.length?done.map(a=>
+    `<div class="drow" data-goto="${a.id}" title="${tr('du timpul și camera acolo','take time and camera there')}">`+
+    `<span class="sw" style="background:${a.coded?"var(--rubric)":"transparent"};`+
+    `border:1px ${a.hyp?"dotted":"solid"} var(--rubric)"></span>`+
+    `<span class="nm">${a.name}<br><span class="st">${RO_MON[monthOf(a.from)-1]} ${yearOf(a.from)}</span></span>`+
+    `<span class="st">${a.coded?tr("codificat","coded"):tr("necodificat","not coded")}</span></div>`).join("")
+    :`<div class="note">${tr("Nicio anexare încă.","No annexation yet.")}</div>`;
+  if(done.length){
+    /* Două bare de proporție în locul propoziției: suprafața codificată
+       față de cea anexată, și cetățile la fel. Se vede că prima bară nu
+       mai crește după 1484, iar a doua continuă. */
+    const bar=(k,n,lab,k2)=>{
+      const pct=n?Math.round(k/n*100):0;
+      return `<div class="prop" data-ex="prop:${k2}"><span class="pl">${lab}</span>`+
+        `<span class="pt"><i style="width:${pct}%"></i></span>`+
+        `<span class="pn">${k}/${n}</span></div>`;};
+    h+=bar(coded,done.length,tr("teritorii codificate","territories coded"),"terr")+
+       bar(fc,forts.length,tr("cetăți codificate","fortresses coded"),"forts")+
+       (up?bar(up,forts.length,tr("întreținute de Moldova","Moldavian upkeep"),"upkeep"):"");
+    h+=`<div class="verdict">`+tr(
+       done.length>coded
+         ? `Stăpânirea s-a extins de ${done.length} ori; codarea a rămas la 1484.`
+         : `Codarea acoperă tot ce s-a anexat.`,
+       done.length>coded
+         ? `Rule expanded ${done.length} times; the coding stayed at 1484.`
+         : `Coding covers everything annexed.`)+`</div>`;
+  }
+  $("annex").innerHTML=h+explainBox("prop:");
+}
+
+function renderDetail(){
+  const sel=state.sel, pl=PLACES.find(p=>p.id===sel.id), box=$("detail");
+  if(!pl){box.innerHTML="";return;}
+  const isOtt=pl.ott!==null&&state.t>=pl.ott;
+  let h=`<div style="font-size:13px;font-weight:600">${pl.name}</div>`+
+        `<div class="st" style="margin-bottom:6px">${pl.alt?pl.alt+" · ":""}`+
+        `${isOtt?tr("otoman","Ottoman"):(pl.ott===null?tr("moldovenesc","Moldavian")
+          :tr("încă necucerit","not yet taken"))}</div>`;
+
+  const sty=STORIES[pl.id];
+  if(sty && isOtt){
+    h+=`<div style="font-weight:600;font-size:11.5px;margin-bottom:3px">${sty.title}</div>`;
+    /* Afirmațiile erau șase paragrafe. Acum sunt șase rânduri cu un semn
+       de certitudine; propoziția întreagă și sursa apar la clic. Panoul
+       rămâne o figură, iar textul vine la cerere. */
+    h+=`<div class="claims">`+sty.claims.map((c,i)=>{
+      const open=state.explain===`claim:${pl.id}:${i}`;
+      return `<div class="crow ${c.c}${open?" open":""}" data-ex="claim:${pl.id}:${i}">`+
+        `<i class="cdot"></i><span class="ctx">${c.t}</span></div>`+
+        (open?`<div class="cfull"><p>${c.t}</p><span class="cm">${CERT_RO[c.c]}`+
+          `${c.sl?" · "+c.sl:tr(" · fără sursă"," · no source")}</span></div>`:"");
+    }).join("")+`</div>`;
+    h+=`<div class="crow key ${sty.key.c}"><i class="cdot"></i>`+
+       `<span class="ctx">${sty.key.t}</span></div>`;
+  }
+  if(!pl.coded){
+    h+=`<div class="note">${tr("Niciun loc din afara celor două porturi nu are codare istimâlet.","No place outside the two ports carries istimâlet coding.")}</div>`;
+    box.innerHTML=h; return;
+  }
+  if(!isOtt){h+=`<div class="note">${tr("Înainte de cucerire nu există asize: istimâletul e o politică post-cucerire.","Before the conquest there are no courses: istimâlet is a post-conquest policy.")}</div>`; box.innerHTML=h; return;}
+
+  const CONC=CONC_IDS;
+  /* Lista de dimensiuni a stat aici o vreme, dar o spunea a patra oară:
+     e deja în coloana din stânga, în asizele turnului și în etichetele de
+     pe hartă. Scoasă, panoul Detaliu încape fără derulare. */
+  const live=d=>srcOf(pl.id,d)>0;
+  const strong=DIMS.filter(d=>live(d)&&EV[stFor(pl.id,d)].rank>=2).length;
+  const concOk=DIMS.filter(d=>live(d)&&CONC.includes(d.id)&&EV[stFor(pl.id,d)].rank>=2);
+  const corrob=DIMS.filter(d=>srcOf(pl.id,d)>=CORROB);
+  const edited=DIMS.some(d=>srcOf(pl.id,d)!==baseSrc(pl.id,d));
+  /* Cifra din verdict nu e doar o cifră: o apeși și harta se reduce la
+     dimensiunile pe care le numără. Așa se poate verifica, nu doar citi. */
+  /* Scutul: opt celule, în ordinea asizelor, cu cele cinci conciliante
+     încadrate. Propoziția spunea „3 din 8, iar dintre cele 5 conciliante
+     una" — grila o arată dintr-o privire, și se vede și *care*. */
+  const cell=d=>{const k=stFor(pl.id,d), st=EV[k], n=srcOf(pl.id,d);
+    const dead=n<=0;
+    return `<i class="cl${sel.dim===d.id?" on":""}" data-dim="${d.id}" data-ex="dim:${d.id}" `+
+      `title="${d.n} — ${st.lab}${n?` · ${n}`:""}" style="background:${
+      dead?"transparent":st.c};border-color:${st.c}${dead?";border-style:dashed":""}"></i>`;};
+  h+=`<div class="shield">`+
+       `<div class="shgrp"><span>${tr("dovedite","shown")}</span>`+
+         DIMS.filter(d=>!CONC_IDS.includes(d.id)).map(cell).join("")+`</div>`+
+       `<div class="shgrp conc"><span>${tr("conciliante","conciliatory")}</span>`+
+         DIMS.filter(d=>CONC_IDS.includes(d.id)).map(cell).join("")+`</div>`+
+     `</div>`;
+  h+=`<div class="verdict">`+tr(
+     `<button class="cnt" data-only="strong">${strong} din ${DIMS.length}</button> `+
+     `dimensiuni au dovadă locală; dintre cele ${CONC.length} conciliante, `+
+     `<b>${concOk.length}</b>. Coroborate de două surse independente: `+
+     `<b>${corrob.length}</b>.`,
+     `<button class="cnt" data-only="strong">${strong} of ${DIMS.length}</button> `+
+     `dimensions have local evidence; of the ${CONC.length} conciliatory ones, `+
+     `<b>${concOk.length}</b>. Corroborated by two independent sources: `+
+     `<b>${corrob.length}</b>.`)+`</div>`+
+     (edited?`<div class="note" style="color:var(--untested)"><b>`+
+       tr("Simulare activă.","Simulation active.")+`</b> `+
+       tr("Cifrele nu mai sunt cele din corpus.","These are no longer the corpus figures.")+
+       `</div>`:``);
+
+  h+=`<div class="scoreline" data-ex="v2:open"><span>${
+       tr("puncte deschise în v2","open items in v2")}</span><b>3</b><em>?</em></div>`;
+  box.innerHTML=h+explainBox("dim:","v2:");
+}
+
+/* ==================================================================== *
+ *  Capul de pagină și cheile — tot ce e scris static se reconstruiește
+ *  la schimbarea limbii, altfel o jumătate de interfață rămâne într-o
+ *  limbă și cealaltă în alta.
+ * ==================================================================== */
+function buildLegend(){
+  const row=(k,s)=>`<div><span class="sw" style="width:${
+    (WID[k]/WID.direct*17).toFixed(1)}px;height:7px;border-radius:1px;`+
+    `background:${SOLID[k]?s.c:"transparent"};border:1px solid ${s.c}"></span>${s.lab}</div>`;
+  $("legend").innerHTML=
+   `<div class="lgh" title="${tr('Un turn = un port. Opt asize, câte una pe dimensiune, în aceeași ordine de jos în sus.','One tower = one port. Eight courses, one per dimension, always in the same order from the base up.')}">${
+      tr("Cum se citește turnul","Reading the tower")}</div>`+
+   `<div class="lgp">${tr("Lățimea asizei = cât de solidă e dovada <i>locală</i>.",
+                          "Course width = how solid the <i>local</i> evidence is.")}</div>`+
+   Object.entries(EV).map(([k,s])=>row(k,s)).join("")+
+   `<div class="lgp">${tr("Asiză goală = izvorul o contrazice.",
+                          "Hollow course = the source contradicts it.")}</div>`+
+   `<div class="lgh">${tr("Semnele de pe teren","Marks on the ground")}</div>`+
+   `<div><span class="sw" style="width:17px;height:7px;background:#a8452f"></span>${
+      tr("anexat","annexed")}</div>`+
+   `<div><span class="sw" style="width:17px;height:7px;background:transparent;`+
+      `border:1px solid #9E2B20"></span>${tr("anexat, necodificat","annexed, not coded")}</div>`+
+   `<div><span class="sw" style="width:17px;height:7px;background:`+
+      `repeating-linear-gradient(45deg,transparent,transparent 2px,#7d2d1e55 2px,#7d2d1e55 3px);`+
+      `border:1px solid var(--line)"></span>${tr("tributar","tributary")}</div>`+
+   `<div><span class="sw" style="width:11px;height:8px;border:1.5px solid #9C6B28;`+
+      `border-radius:50%"></span>${tr("întreținută de Moldova","Moldavian upkeep")}</div>`;
+}
+
+function buildChrome(){
+  document.querySelectorAll("#lang button").forEach(b=>
+    b.classList.toggle("on",b.dataset.l===LANG));
+  $("hdrh1").textContent=tr("Harta dovezilor — istimâlet pe teren",
+                            "The evidence map — istimâlet on the ground");
+  $("hdrsub").innerHTML=tr(
+    "Ce poate și ce nu poate fi dovedit despre guvernarea otomană la Kili și Akkerman, "+
+    "1450–1600. După Plamadeala, C. (2026), v2.",
+    "What can and cannot be shown about Ottoman governance at Kili and Akkerman, "+
+    "1450–1600. After Plamadeala, C. (2026), v2.");
+  $("hint").textContent=tr("trage = rotește · rotița = zoom · treci peste o asiză",
+                           "drag to rotate · wheel to zoom · hover a course");
+  const H={hAsize:tr("Asizele turnului","Courses of the tower"),
+           hAsizeP:tr("De jos în sus. Lățimea = soliditatea dovezii.",
+                      "Base upward. Width = solidity of the evidence."),
+           hStrat:tr("Straturi","Layers"), hVed:tr("Vedere","View"),
+           hExpl:tr("explodată","exploded"),
+           hSim:tr("Simulare de surse","Source simulation"),
+           hSimP:tr("Adaugă sau scoate surse independente și vezi ce rezistă.",
+                    "Add or remove independent sources and see what survives."),
+           bStress:tr("test de rezistență","stress test"), bReset:tr("reset","reset"),
+           fPolicy:tr("Politica lui Bayezid II","Bayezid II's policy"),
+           fEffect:tr("Efectul — măsurabil?","The effect — measurable?"),
+           fAnnex:tr("Anexări și acoperire","Annexations and coverage"),
+           fDetail:tr("Detaliu","Detail")};
+  for(const k in H){const el=$(k); if(el) el.innerHTML=H[k];}
+  $("play").title=tr("rulează timpul","run time");
+  $("hKey").textContent=tr("Cheie de citire","Reading key");
+  buildLegend(); buildLayers(); buildPeriods(); buildTabs(); showTab(state.tab,{flash:false});
+}
+document.querySelectorAll("h2.disc").forEach(h=>h.onclick=()=>h.classList.toggle("shut"));
+document.getElementById("lang").onclick=e=>{
+  const b=e.target.closest("[data-l]"); if(b) setLang(b.dataset.l);
+};
+
+/* ==================================================================== *
+ *  apply() — singurul loc din care starea ajunge la scenă și la panouri
+ * ==================================================================== */
+let prevT=null;
+function apply(){
+  const t=state.t;
+  /* dacă timpul tocmai a trecut peste luna căderii unei cetăți, aprinde
+     inelul acolo — o singură dată, la trecere */
+  if(prevT!==null && t!==prevT)
+    for(const p of PLACES)
+      if(p.ott!==null && prevT<p.ott && t>=p.ott) addPulse(px(p.lon),pz(p.lat));
+  prevT=t;
+
+  $("tdate").textContent=`${RO_MON[monthOf(t)-1]} ${yearOf(t)}`;
+  const inP=periodAt(t).map(p=>p.id);
+  document.querySelectorAll("[data-p]").forEach(b=>
+    b.style.borderColor=inP.includes(b.dataset.p)?"var(--ink)":"");
+
+  renderPorts(); renderDims(); renderSrcSim(); renderPolicy(); renderEffect();
+  renderIstim();
+  renderAnnex(); renderDetail(); draw(); kick();
+}
+
+/* ==================================================================== *
+ *  Interacțiunea cu harta.
+ *
+ *  Trasul merge direct, fără stratul de animație: dacă rotirea trece
+ *  prin easing, mâna și imaginea se despart. Clicul se deosebește de tras
+ *  prin distanța parcursă — sub trei pixeli înseamnă că omul a apăsat, nu
+ *  a rotit.
+ * ==================================================================== */
+let drag=null;
+
+cv.onpointerdown=e=>{
+  drag={x:e.clientX,y:e.clientY,th:cam.th,ph:cam.ph,moved:false};
+  try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+};
+
+cv.onpointermove=e=>{
+  if(drag){
+    if(Math.abs(e.clientX-drag.x)+Math.abs(e.clientY-drag.y)>3) drag.moved=true;
+    cam.th=drag.th-(e.clientX-drag.x)*0.006;
+    cam.ph=Math.min(1.45,Math.max(0.16,drag.ph-(e.clientY-drag.y)*0.005));
+    if(A["cam.th"]){A["cam.th"].v=A["cam.th"].t=cam.th;}
+    if(A["cam.ph"]){A["cam.ph"].v=A["cam.ph"].t=cam.ph;}
+    draw(); return;
+  }
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=null,bd=1e9;
+  for(const h of hit){const d=Math.hypot(h.x-mx,h.y-my); if(d<15&&d<bd){bd=d;best=h;}}
+  const was=state.hover&&state.hover.id+"|"+state.hover.dim;
+  const now=best&&best.dim?best.id+"|"+best.dim:null;
+  state.hover=best&&best.dim?best:null;
+  const tip=$("tip");
+  if(best){ tip.style.display="block";
+            tip.style.left=(mx+14)+"px"; tip.style.top=(my-6)+"px";
+            tip.innerHTML=`<b>${best.label||best.id}</b>`+(best.sub?`<br>${best.sub}`:""); }
+  else tip.style.display="none";
+  cv.style.cursor=best?"pointer":"grab";
+  if(was!==now) draw();
+};
+
+cv.onpointerup=e=>{
+  if(drag&&!drag.moved){
+    const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+    let best=null,bd=1e9;
+    for(const h of hit){const d=Math.hypot(h.x-mx,h.y-my); if(d<18&&d<bd){bd=d;best=h;}}
+    if(best){
+      state.sel=best.kind==="col"?{kind:"col",id:best.id,dim:best.dim}
+                                 :{kind:"place",id:best.id};
+      const p=PLACES.find(x=>x.id===best.id);
+      if(p){ addSel(px(p.lon),pz(p.lat));
+             if(best.kind!=="col"){ focusOn(p.lon,p.lat); cam.r=330; } }
+      apply(); pingTab("detail");
+    }
+  }
+  drag=null;
+};
+
+cv.onpointercancel=()=>{drag=null;};
+cv.onpointerleave=()=>{state.hover=null; $("tip").style.display="none"; draw();};
+
+cv.onwheel=e=>{
+  e.preventDefault();
+  cam.r=Math.min(1800,Math.max(150,cam.r+e.deltaY*0.5));
+  if(A["cam.r"]){A["cam.r"].v=A["cam.r"].t=cam.r;}
+  draw();
+};
+
+function resize(){
+  /* clientWidth/clientHeight sunt doar de citit: `cv.clientWidth = x` nu
+     face nimic, iar pânza rămânea la dimensiunea ei implicită, scalată
+     apoi de atributul width. Se scrie în style, nu în proprietate. */
+  const mid=document.getElementById("mid");
+  W=mid.clientWidth; H=mid.clientHeight;
+  const dpr=Math.min(devicePixelRatio||1,2);
+  cv.style.width=W+"px"; cv.style.height=H+"px";
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  FOC=H/(2*Math.tan(21*Math.PI/180));
+  draw();
+}
+addEventListener("resize",resize);
+document.documentElement.lang=LANG;
+resize(); buildChrome(); apply();
+</script>
+</body>
+</html>
